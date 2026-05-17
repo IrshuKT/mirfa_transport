@@ -47,7 +47,6 @@ async def list_banks(db: DB, current_user: CurrentUser):
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_bank(
     payload: BankCreate, db: DB, current_user: CurrentUser,
-    _: Annotated[object, AccountantRequired],
 ):
     if payload.is_default:
         # Unset existing default
@@ -64,7 +63,6 @@ async def create_bank(
 @router.patch("/{bank_id}")
 async def update_bank(
     bank_id: int, payload: BankUpdate, db: DB, current_user: CurrentUser,
-    _: Annotated[object, AccountantRequired],
 ):
     bank = await _get_or_404(bank_id, current_user.company_id, db)
     if payload.is_default:

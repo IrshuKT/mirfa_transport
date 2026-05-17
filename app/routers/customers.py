@@ -92,7 +92,6 @@ async def list_customers(
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_customer(
     payload: CustomerCreate, db: DB, current_user: CurrentUser,
-    _: Annotated[User, StaffRequired],
 ):
     customer = Customer(
         company_id=current_user.company_id,
@@ -116,7 +115,6 @@ async def get_customer(customer_id: int, db: DB, current_user: CurrentUser):
 @router.patch("/{customer_id}")
 async def update_customer(
     customer_id: int, payload: CustomerUpdate, db: DB, current_user: CurrentUser,
-    _: Annotated[User, StaffRequired],
 ):
     customer = await _get_or_404(customer_id, current_user, db)
     for k, v in payload.model_dump(exclude_none=True).items():
@@ -129,7 +127,6 @@ async def update_customer(
 @router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def deactivate_customer(
     customer_id: int, db: DB, current_user: CurrentUser,
-    _: Annotated[User, StaffRequired],
 ):
     customer = await _get_or_404(customer_id, current_user, db)
     customer.is_active = False

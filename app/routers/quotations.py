@@ -87,7 +87,6 @@ async def list_quotations(
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_quotation(
     payload: QuotationCreate, db: DB, current_user: CurrentUser,
-    _: Annotated[User, StaffRequired],
 ):
     totals = _compute_totals(payload.line_items)
     quote_no = await next_quote_no(db, current_user.company_id)
@@ -124,7 +123,6 @@ async def get_quotation(quote_id: int, db: DB, current_user: CurrentUser):
 @router.patch("/{quote_id}")
 async def update_quotation(
     quote_id: int, payload: QuotationUpdate, db: DB, current_user: CurrentUser,
-    _: Annotated[User, StaffRequired],
 ):
     quotation = await _get_or_404(quote_id, current_user.company_id, db)
     if quotation.status not in (QuotationStatus.DRAFT, QuotationStatus.SENT):
@@ -156,7 +154,6 @@ async def update_quotation(
 @router.post("/{quote_id}/send", status_code=status.HTTP_204_NO_CONTENT)
 async def send_quotation(
     quote_id: int, db: DB, current_user: CurrentUser,
-    _: Annotated[User, StaffRequired],
 ):
     quotation = await _get_or_404(quote_id, current_user.company_id, db)
     quotation.status = QuotationStatus.SENT
@@ -185,7 +182,6 @@ async def accept_quotation(
 
 @router.post("/{quote_id}/convert-to-job", status_code=status.HTTP_201_CREATED)
 async def convert_to_job(quote_id: int, db: DB, current_user: CurrentUser,
-    _: Annotated[User, StaffRequired],
 ):
     """Convert an accepted quotation into a Job."""
     import secrets

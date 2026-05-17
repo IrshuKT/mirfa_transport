@@ -108,7 +108,6 @@ async def expiry_alerts(
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_employee(
     payload: EmployeeCreate, db: DB, current_user: CurrentUser,
-    _: Annotated[User, AdminRequired],
 ):
     existing = await db.scalar(
         select(Employee).where(
@@ -133,7 +132,6 @@ async def get_employee(employee_id: int, db: DB, current_user: CurrentUser):
 @router.patch("/{employee_id}")
 async def update_employee(
     employee_id: int, payload: EmployeeUpdate, db: DB, current_user: CurrentUser,
-    _: Annotated[User, AdminRequired],
 ):
     emp = await _get_or_404(employee_id, current_user.company_id, db)
     for k, v in payload.model_dump(exclude_none=True).items():

@@ -98,7 +98,6 @@ async def vehicle_expiry_alerts(
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_vehicle(
     payload: VehicleCreate, db: DB, current_user: CurrentUser,
-    _: Annotated[User, AdminRequired],
 ):
     existing = await db.scalar(
         select(Vehicle).where(Vehicle.plate_no == payload.plate_no)
@@ -120,7 +119,6 @@ async def get_vehicle(vehicle_id: int, db: DB, current_user: CurrentUser):
 @router.patch("/{vehicle_id}")
 async def update_vehicle(
     vehicle_id: int, payload: VehicleUpdate, db: DB, current_user: CurrentUser,
-    _: Annotated[User, AdminRequired],
 ):
     vehicle = await _get_or_404(vehicle_id, current_user.company_id, db)
     for k, v in payload.model_dump(exclude_none=True).items():

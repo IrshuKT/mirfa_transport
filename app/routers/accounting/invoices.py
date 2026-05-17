@@ -70,7 +70,6 @@ async def list_invoices(
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_invoice_endpoint(
     payload: InvoiceCreate, db: DB, current_user: CurrentUser,
-    _: Annotated[object, StaffRequired],
 ):
     invoice = await create_invoice(
         db=db,
@@ -132,7 +131,6 @@ async def send_invoice(invoice_id: int, db: DB, current_user: CurrentUser):
 @router.post("/{invoice_id}/cancel", status_code=status.HTTP_204_NO_CONTENT)
 async def cancel_invoice(
     invoice_id: int, db: DB, current_user: CurrentUser,
-    _: Annotated[object, AccountantRequired],
 ):
     invoice = await _get_or_404(invoice_id, current_user.company_id, db)
     if invoice.status == InvoiceStatus.PAID:

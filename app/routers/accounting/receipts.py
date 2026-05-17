@@ -57,7 +57,6 @@ async def list_receipts(
 @receipts_router.post("", status_code=status.HTTP_201_CREATED)
 async def create_receipt(
     payload: ReceiptCreate, db: DB, current_user: CurrentUser,
-    _: Annotated[object, AccountantRequired],
 ):
     receipt_no = await next_receipt_no(db, current_user.company_id)
     receipt = Receipt(
@@ -131,7 +130,6 @@ async def list_payments(
 @payments_router.post("", status_code=status.HTTP_201_CREATED)
 async def create_payment(
     payload: PaymentCreate, db: DB, current_user: CurrentUser,
-    _: Annotated[object, AccountantRequired],
 ):
     payment_no = await next_payment_no(db, current_user.company_id)
     payment = VendorPayment(
@@ -213,7 +211,6 @@ async def list_journals(
 @journals_router.post("", status_code=status.HTTP_201_CREATED)
 async def create_journal(
     payload: JournalCreate, db: DB, current_user: CurrentUser,
-    _: Annotated[object, AccountantRequired],
 ):
     total_debit = sum(l.debit for l in payload.lines)
     total_credit = sum(l.credit for l in payload.lines)
@@ -245,7 +242,6 @@ async def create_journal(
 @journals_router.post("/{je_id}/reverse", status_code=status.HTTP_201_CREATED)
 async def reverse_journal(
     je_id: int, db: DB, current_user: CurrentUser,
-    _: Annotated[object, AccountantRequired],
 ):
     """Create a reversal entry that mirrors all lines with DR/CR swapped."""
     from sqlalchemy.orm import selectinload

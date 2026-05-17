@@ -99,7 +99,6 @@ async def create_job(
     payload: JobCreate,
     db: DB,
     current_user: CurrentUser,
-    _: Annotated[User, DispatcherRequired],
 ):
     # Auto-generate job number: JOB-YYYYMMDD-XXXX
     from datetime import date
@@ -133,7 +132,6 @@ async def update_job_status(
     new_status: str,
     db: DB,
     current_user: CurrentUser,
-    _: Annotated[User, DispatcherRequired],
 ):
     job = await _get_or_404(job_id, db)
     _assert_company(current_user, job)
@@ -153,7 +151,6 @@ async def dispatch_job(
     payload: DispatchCreate,
     db: DB,
     current_user: CurrentUser,
-    _: Annotated[User, DispatcherRequired],
 ):
     job = await _get_or_404(job_id, db)
     _assert_company(current_user, job)

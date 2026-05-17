@@ -64,7 +64,6 @@ async def list_vendors(
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_vendor(
     payload: VendorCreate, db: DB, current_user: CurrentUser,
-    _: Annotated[User, StaffRequired],
 ):
     vendor = Vendor(company_id=current_user.company_id, **payload.model_dump())
     db.add(vendor)
@@ -81,7 +80,6 @@ async def get_vendor(vendor_id: int, db: DB, current_user: CurrentUser):
 @router.patch("/{vendor_id}")
 async def update_vendor(
     vendor_id: int, payload: VendorUpdate, db: DB, current_user: CurrentUser,
-    _: Annotated[User, StaffRequired],
 ):
     vendor = await _get_or_404(vendor_id, current_user.company_id, db)
     for k, v in payload.model_dump(exclude_none=True).items():
@@ -93,7 +91,6 @@ async def update_vendor(
 @router.delete("/{vendor_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def deactivate_vendor(
     vendor_id: int, db: DB, current_user: CurrentUser,
-    _: Annotated[User, StaffRequired],
 ):
     vendor = await _get_or_404(vendor_id, current_user.company_id, db)
     vendor.is_active = False

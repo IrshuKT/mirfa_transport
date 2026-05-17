@@ -6,22 +6,24 @@ Financial Reports:
   - UAE FTA VAT Return (Boxes 1-9)
   - Ledger (account-level drill-down)
 """
-from typing import Optional
+from typing import Annotated, Optional
 from datetime import date
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import CurrentUser, AccountantRequired
+from app.core.dependencies import CurrentUser
 from app.models.accounting.models import Account, AccountType, JournalLine, JournalEntry
 
 router = APIRouter(prefix="/accounting/reports", tags=["Accounting - Reports"])
-DB_DEP = Depends(get_db)
+
+DB = Annotated[AsyncSession, Depends(get_db)]
 
 
-async def _account_balances(db: AsyncSession, company_id: int, date_from: date, date_to: date) -> dict:
-    """Returns {account_id: {"code":, "name":, "type":, "debit":, "credit":, "balance":}}"""
+async def _account_balances(
+    db: AsyncSession, company_id: int, date_from: date, date_to: date
+) -> list:
     result = await db.execute(
         select(
             Account.id, Account.code, Account.name, Account.account_type,
@@ -41,16 +43,15 @@ async def _account_balances(db: AsyncSession, company_id: int, date_from: date, 
         .order_by(Account.code)
     )
     rows = result.all()
-    balances = {}
+    balances = []
     for row in rows:
         dr = float(row.total_debit)
         cr = float(row.total_credit)
-        # Normal balance: Asset/Expense = DR; Liability/Equity/Revenue = CR
         if row.account_type in (AccountType.ASSET, AccountType.EXPENSE):
             balance = dr - cr
         else:
             balance = cr - dr
-        balances[row.id] = {
+        balances.append({
             "account_id": row.id,
             "code": row.code,
             "name": row.name,
@@ -58,45 +59,47 @@ async def _account_balances(db: AsyncSession, company_id: int, date_from: date, 
             "total_debit": round(dr, 2),
             "total_credit": round(cr, 2),
             "balance": round(balance, 2),
-        }
+        })
     return balances
 
 
 @router.get("/trial-balance")
 async def trial_balance(
-    db: AsyncSession = DB_DEP,
-    current_user: CurrentUser = Depends(),
-    _=AccountantRequired,
+    db: DB,
+    current_user: CurrentUser,
     date_from: date = Query(...),
     date_to: date = Query(...),
 ):
     balances = await _account_balances(db, current_user.company_id, date_from, date_to)
-    rows = list(balances.values())
-    total_dr = round(sum(r["total_debit"] for r in rows), 2)
-    total_cr = round(sum(r["total_credit"] for r in rows), 2)
+    total_dr = round(sum(r["total_debit"] for r in balances), 2)
+    total_cr = round(sum(r["total_credit"] for r in balances), 2)
     return {
         "period": {"from": date_from, "to": date_to},
-        "accounts": rows,
-        "totals": {"debit": total_dr, "credit": total_cr, "balanced": abs(total_dr - total_cr) < 0.01},
+        "accounts": balances,
+        "totals": {
+            "debit": total_dr,
+            "credit": total_cr,
+            "balanced": abs(total_dr - total_cr) < 0.01,
+        },
     }
 
 
 @router.get("/profit-loss")
 async def profit_and_loss(
-    db: AsyncSession = DB_DEP,
-    current_user: CurrentUser = Depends(),
+    db: DB,
+    current_user: CurrentUser,
     date_from: date = Query(...),
     date_to: date = Query(...),
 ):
     balances = await _account_balances(db, current_user.company_id, date_from, date_to)
-    revenue = [b for b in balances.values() if b["account_type"] == AccountType.REVENUE]
-    expenses = [b for b in balances.values() if b["account_type"] == AccountType.EXPENSE]
-    total_revenue = round(sum(r["balance"] for r in revenue), 2)
+    revenue  = [b for b in balances if b["account_type"] == AccountType.REVENUE]
+    expenses = [b for b in balances if b["account_type"] == AccountType.EXPENSE]
+    total_revenue  = round(sum(r["balance"] for r in revenue), 2)
     total_expenses = round(sum(e["balance"] for e in expenses), 2)
     net_profit = round(total_revenue - total_expenses, 2)
     return {
         "period": {"from": date_from, "to": date_to},
-        "revenue": {"accounts": revenue, "total": total_revenue},
+        "revenue":  {"accounts": revenue,  "total": total_revenue},
         "expenses": {"accounts": expenses, "total": total_expenses},
         "net_profit": net_profit,
         "net_profit_margin_pct": round(net_profit / total_revenue * 100, 2) if total_revenue else 0,
@@ -105,24 +108,23 @@ async def profit_and_loss(
 
 @router.get("/balance-sheet")
 async def balance_sheet(
-    db: AsyncSession = DB_DEP,
-    current_user: CurrentUser = Depends(),
+    db: DB,
+    current_user: CurrentUser,
     as_of_date: date = Query(...),
 ):
-    """Balance sheet uses all posted entries from inception to as_of_date."""
     from datetime import date as dt
     balances = await _account_balances(db, current_user.company_id, dt(2000, 1, 1), as_of_date)
-    assets = [b for b in balances.values() if b["account_type"] == AccountType.ASSET]
-    liabilities = [b for b in balances.values() if b["account_type"] == AccountType.LIABILITY]
-    equity = [b for b in balances.values() if b["account_type"] == AccountType.EQUITY]
-    total_assets = round(sum(a["balance"] for a in assets), 2)
+    assets      = [b for b in balances if b["account_type"] == AccountType.ASSET]
+    liabilities = [b for b in balances if b["account_type"] == AccountType.LIABILITY]
+    equity      = [b for b in balances if b["account_type"] == AccountType.EQUITY]
+    total_assets      = round(sum(a["balance"] for a in assets), 2)
     total_liabilities = round(sum(l["balance"] for l in liabilities), 2)
-    total_equity = round(sum(e["balance"] for e in equity), 2)
+    total_equity      = round(sum(e["balance"] for e in equity), 2)
     return {
         "as_of": as_of_date,
-        "assets": {"accounts": assets, "total": total_assets},
+        "assets":      {"accounts": assets,      "total": total_assets},
         "liabilities": {"accounts": liabilities, "total": total_liabilities},
-        "equity": {"accounts": equity, "total": total_equity},
+        "equity":      {"accounts": equity,      "total": total_equity},
         "total_liabilities_and_equity": round(total_liabilities + total_equity, 2),
         "balanced": abs(total_assets - (total_liabilities + total_equity)) < 0.01,
     }
@@ -130,26 +132,13 @@ async def balance_sheet(
 
 @router.get("/vat-return")
 async def vat_return(
-    db: AsyncSession = DB_DEP,
-    current_user: CurrentUser = Depends(),
+    db: DB,
+    current_user: CurrentUser,
     date_from: date = Query(...),
     date_to: date = Query(...),
 ):
-    """
-    UAE FTA VAT Return boxes 1-9.
-    Box 1 = Standard rated sales (AE)
-    Box 2 = Zero-rated sales
-    Box 3 = Exempt supplies
-    Box 4 = Goods imported into UAE
-    Box 5 = Tax due (output VAT)
-    Box 6 = Recoverable tax (input VAT on purchases)
-    Box 7 = Tax on imports
-    Box 8 = Adjustments
-    Box 9 = Net VAT payable (Box 5 - Box 6)
-    """
     from app.models.accounting.models import Invoice, InvoiceStatus, VendorInvoice
 
-    # Output VAT — from posted sales invoices
     inv_result = await db.execute(
         select(
             func.coalesce(func.sum(Invoice.taxable_amount), 0).label("taxable"),
@@ -162,10 +151,9 @@ async def vat_return(
         )
     )
     inv_row = inv_result.one()
-    box1_sales = round(float(inv_row.taxable), 2)
+    box1_sales      = round(float(inv_row.taxable), 2)
     box5_output_vat = round(float(inv_row.vat), 2)
 
-    # Input VAT — from posted vendor invoices
     vi_result = await db.execute(
         select(
             func.coalesce(func.sum(VendorInvoice.subtotal), 0).label("purchases"),
@@ -180,8 +168,7 @@ async def vat_return(
     vi_row = vi_result.one()
     box4_purchases = round(float(vi_row.purchases), 2)
     box6_input_vat = round(float(vi_row.input_vat), 2)
-
-    box9_net_vat = round(box5_output_vat - box6_input_vat, 2)
+    box9_net_vat   = round(box5_output_vat - box6_input_vat, 2)
 
     return {
         "period": {"from": date_from, "to": date_to},
@@ -200,7 +187,7 @@ async def vat_return(
         "summary": {
             "total_sales": box1_sales,
             "total_purchases": box4_purchases,
-            "vat_payable": box9_net_vat if box9_net_vat > 0 else 0,
+            "vat_payable":   box9_net_vat if box9_net_vat > 0 else 0,
             "vat_refundable": abs(box9_net_vat) if box9_net_vat < 0 else 0,
         },
     }
@@ -208,13 +195,12 @@ async def vat_return(
 
 @router.get("/ledger")
 async def account_ledger(
-    db: AsyncSession = DB_DEP,
-    current_user: CurrentUser = Depends(),
+    db: DB,
+    current_user: CurrentUser,
     account_id: int = Query(...),
     date_from: date = Query(...),
     date_to: date = Query(...),
 ):
-    """Account-level ledger — every posted journal line for the account in period."""
     result = await db.execute(
         select(
             JournalLine.id,

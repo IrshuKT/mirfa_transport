@@ -77,7 +77,6 @@ async def available_drivers(db: DB, current_user: CurrentUser):
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_driver(
     payload: DriverCreate, db: DB, current_user: CurrentUser,
-    _: Annotated[User, AdminRequired],
 ):
     existing = await db.scalar(
         select(Driver).where(Driver.driver_code == payload.driver_code, Driver.company_id == current_user.company_id)
@@ -99,7 +98,6 @@ async def get_driver(driver_id: int, db: DB, current_user: CurrentUser):
 @router.patch("/{driver_id}")
 async def update_driver(
     driver_id: int, payload: DriverUpdate, db: DB, current_user: CurrentUser,
-    _: Annotated[User, AdminRequired],
 ):
     driver = await _get_or_404(driver_id, current_user.company_id, db)
     for k, v in payload.model_dump(exclude_none=True).items():

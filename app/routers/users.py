@@ -17,7 +17,6 @@ DB = Annotated[AsyncSession, Depends(get_db)]
 @router.get("", response_model=dict)
 async def list_users(
     db: DB,
-    _: Annotated[User, AdminRequired],
     current_user: CurrentUser,
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=200),
@@ -49,11 +48,10 @@ async def list_users(
     }
 
 
-@router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED, dependencies=[AdminRequired])
 async def create_user(
     payload: UserCreate,
     db: DB,
-    _: Annotated[User, AdminRequired],
     current_user: CurrentUser,
 ):
     # Company scope check
@@ -88,10 +86,9 @@ async def get_user(user_id: int, db: DB, current_user: CurrentUser):
     return _to_response(user)
 
 
-@router.patch("/{user_id}", response_model=UserResponse)
+@router.patch("/{user_id}", response_model=UserResponse, dependencies=[AdminRequired])
 async def update_user(
     user_id: int, payload: UserUpdate, db: DB, current_user: CurrentUser,
-    _: Annotated[User, AdminRequired],
 ):
     user = await _get_or_404(user_id, db)
     _assert_access(current_user, user)
@@ -102,10 +99,9 @@ async def update_user(
     return _to_response(user)
 
 
-@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[AdminRequired])
 async def deactivate_user(
     user_id: int, db: DB, current_user: CurrentUser,
-    _: Annotated[User, AdminRequired],
 ):
     user = await _get_or_404(user_id, db)
     _assert_access(current_user, user)

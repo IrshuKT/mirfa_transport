@@ -59,7 +59,6 @@ async def account_tree(db: DB, current_user: CurrentUser):
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_account(
     payload: AccountCreate, db: DB, current_user: CurrentUser,
-    _: Annotated[object, AccountantRequired],
 ):
     existing = await db.scalar(
         select(Account).where(Account.code == payload.code, Account.company_id == current_user.company_id)
@@ -76,7 +75,6 @@ async def create_account(
 @router.patch("/{account_id}")
 async def update_account(
     account_id: int, payload: AccountUpdate, db: DB, current_user: CurrentUser,
-    _: Annotated[object, AccountantRequired],
 ):
     account = await _get_or_404(account_id, current_user.company_id, db)
     for k, v in payload.model_dump(exclude_none=True).items():
