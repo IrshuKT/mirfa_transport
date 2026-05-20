@@ -4,6 +4,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.security import decode_token
@@ -29,7 +30,12 @@ async def get_current_user(
     except (JWTError, KeyError, ValueError):
         raise credentials_exception
 
-    result = await db.execute(select(User).where(User.id == user_id))
+    # ── Load user WITH role eagerly ──────────────────────────────────────────
+    result = await db.execute(
+        select(User)
+        .options(selectinload(User.role))
+        .where(User.id == user_id)
+    )
     user = result.scalar_one_or_none()
 
     if user is None:
@@ -47,7 +53,6 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 def require_roles(*roles: str):
     """Dependency factory — restrict endpoint to specific roles."""
-
     async def _check(current_user: CurrentUser) -> User:
         if current_user.role.name not in roles:
             raise HTTPException(
@@ -55,14 +60,13 @@ def require_roles(*roles: str):
                 detail=f"Role '{current_user.role.name}' is not permitted for this action.",
             )
         return current_user
-
     return Depends(_check)
 
 
 # Convenience shortcuts
-SuperAdminRequired = require_roles("super_admin")
-AdminRequired = require_roles("super_admin", "company_admin")
-AccountantRequired = require_roles("super_admin", "company_admin", "accountant")
-DispatcherRequired = require_roles("super_admin", "company_admin", "dispatcher", "staff")
-StaffRequired = require_roles("super_admin", "company_admin", "accountant", "dispatcher", "staff")
-DriverRequired = require_roles("driver")
+SuperAdminRequired  = require_roles("super_admin")
+AdminRequired       = require_roles("super_admin", "company_admin")
+AccountantRequired  = require_roles("super_admin", "company_admin", "accountant")
+DispatcherRequired  = require_roles("super_admin", "company_admin", "dispatcher", "staff")
+StaffRequired       = require_roles("super_admin", "company_admin", "accountant", "dispatcher", "staff")
+DriverRequired      = require_roles("driver")

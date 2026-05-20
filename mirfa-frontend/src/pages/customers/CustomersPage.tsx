@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Eye } from 'lucide-react'
-import { customersApi } from '@/api/services'
+import { customersApi, inviteApi } from '@/api/services'
 import {
   Button, Card, CardHeader, Table, Th, Td,
   PageHeader, SearchInput, Badge, EmptyState, PageLoader,
@@ -133,7 +133,47 @@ function CustomerDetailModal({ customer, onClose }: { customer: any; onClose: ()
           </div>
         )}
         {customer.notes && <div><p className="text-xs text-slate-500">Notes</p><p className="text-sm text-slate-700 mt-1">{customer.notes}</p></div>}
+
+        {/* Portal Login */}
+        <div className="border-t border-slate-100 pt-3">
+          {customer.portal_user_id ? (
+            <div className="flex items-center gap-2 text-sm text-green-600">
+              <span>✓</span>
+              <span>Portal login active (User ID: {customer.portal_user_id})</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-700">Customer Portal Login</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {customer.email ? 'Create login and send credentials via email' : 'Add email address first'}
+                </p>
+              </div>
+              <CreatePortalLoginButton customer={customer} />
+            </div>
+          )}
+        </div>
       </div>
     </Modal>
+  )
+}
+
+function CreatePortalLoginButton({ customer }: { customer: any }) {
+  const qc = useQueryClient()
+  const mutation = useMutation({
+    mutationFn: () => inviteApi.createCustomerPortal(customer.id, true),
+    onSuccess: (res: any) => {
+      qc.invalidateQueries({ queryKey: ['customers'] })
+      toast.success(`Portal login created! Temp password: ${res.data.temp_password}`)
+    },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed'),
+  })
+  return (
+    <Button size="sm" variant="outline"
+      disabled={!customer.email}
+      loading={mutation.isPending}
+      onClick={() => mutation.mutate()}>
+      Create Portal Login
+    </Button>
   )
 }

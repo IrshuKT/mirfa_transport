@@ -115,3 +115,30 @@ def _fmt(v: Vendor) -> dict:
         "payment_terms_days": v.payment_terms_days, "currency": v.currency,
         "is_active": v.is_active, "notes": v.notes, "created_at": v.created_at,
     }
+
+
+# ── Vendor Portal Login ───────────────────────────────────────────────────────
+from app.services.invitation_service import create_vendor_portal_user
+
+@router.post("/{vendor_id}/create-portal-user")
+async def create_vendor_portal_user_endpoint(
+    vendor_id: int,
+    db: DB,
+    current_user: CurrentUser,
+    send_email: bool = True,
+):
+    """Create portal login for a vendor — sends welcome email with credentials."""
+    try:
+        result = await create_vendor_portal_user(
+            db=db,
+            vendor_id=vendor_id,
+            company_id=current_user.company_id,
+            created_by_id=current_user.id,
+            send_welcome=send_email,
+        )
+        return {
+            "message": "Vendor portal login created successfully",
+            **result,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

@@ -190,3 +190,35 @@ export const reportsApi = {
   ledger: (account_id: number, date_from: string, date_to: string) =>
     api.get('/accounting/reports/ledger', { params: { account_id, date_from, date_to } }),
 }
+
+export const rolesApi = {
+  list: () => api.get<{ id: number; name: string; description: string }[]>('/users/roles'),
+}
+
+// ── Invitations ───────────────────────────────────────────────────────────────
+export const inviteApi = {
+  // Super admin registers company + admin
+  registerCompany: (data: any) =>
+    api.post('/companies/register', data),
+
+  // Admin invites staff user by role name
+  inviteUser: (data: {
+    full_name: string
+    email: string
+    phone?: string
+    role_name: string
+    send_welcome_email?: boolean
+  }) => api.post('/users/invite', data),
+
+  // Create customer portal login
+  createCustomerPortal: (customer_id: number, send_email = true) =>
+    api.post(`/customers/${customer_id}/create-portal-user`, null, {
+      params: { send_email },
+    }),
+
+  // Create vendor portal login
+  createVendorPortal: (vendor_id: number, send_email = true) =>
+    api.post(`/vendors/${vendor_id}/create-portal-user`, null, {
+      params: { send_email },
+    }),
+}

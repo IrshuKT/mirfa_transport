@@ -1,6 +1,5 @@
 """
 Auth service: login, token refresh, 2FA, password operations.
-All DB operations are async; tokens are signed JWTs.
 """
 import hashlib
 from datetime import datetime, timedelta, timezone
@@ -9,6 +8,7 @@ from typing import Optional
 from fastapi import HTTPException, Request, status
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.security import (
@@ -29,7 +29,12 @@ async def login(
     db: AsyncSession,
     request: Optional[Request] = None,
 ) -> TokenResponse:
-    result = await db.execute(select(User).where(User.email == payload.email))
+    # ── Load user WITH role eagerly ──────────────────────────────────────────
+    result = await db.execute(
+        select(User)
+        .options(selectinload(User.role))
+        .where(User.email == payload.email)
+    )
     user: Optional[User] = result.scalar_one_or_none()
 
     if not user or not verify_password(payload.password, user.hashed_password):
@@ -53,7 +58,6 @@ async def login(
     # 2FA check
     if user.totp_enabled:
         if not payload.totp_code:
-            # Signal frontend to collect TOTP
             return TokenResponse(
                 access_token="",
                 refresh_token="",
@@ -70,26 +74,25 @@ async def login(
             )
 
     access_token = create_access_token(user.id, user.role.name, user.company_id)
-    refresh_raw = create_refresh_token(user.id)
+    refresh_raw  = create_refresh_token(user.id)
 
     # Persist hashed refresh token
     expires_at = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    db.add(
-        RefreshToken(
-            user_id=user.id,
-            token_hash=_hash_token(refresh_raw),
-            expires_at=expires_at,
-            ip_address=request.client.host if request else None,
-            user_agent=request.headers.get("user-agent") if request else None,
-        )
-    )
+    db.add(RefreshToken(
+        user_id=user.id,
+        token_hash=_hash_token(refresh_raw),
+        expires_at=expires_at,
+        ip_address=request.client.host if request else None,
+        user_agent=request.headers.get("user-agent") if request else None,
+    ))
 
     # Update last login
     await db.execute(
-        update(User).where(User.id == user.id).values(last_login_at=datetime.now(timezone.utc))
+        update(User).where(User.id == user.id)
+        .values(last_login_at=datetime.now(timezone.utc))
     )
 
-    # Audit
+    # Audit log
     db.add(AuditLog(
         user_id=user.id,
         company_id=user.company_id,
@@ -124,20 +127,21 @@ async def refresh_tokens(raw_refresh: str, db: AsyncSession) -> TokenResponse:
         select(RefreshToken).where(
             RefreshToken.token_hash == token_hash,
             RefreshToken.user_id == user_id,
-            RefreshToken.revoked == False,  # noqa: E712
+            RefreshToken.revoked == False,
         )
     )
     stored: Optional[RefreshToken] = result.scalar_one_or_none()
     if not stored or stored.expires_at < datetime.now(timezone.utc):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token expired or revoked")
 
-    # Rotate: revoke old, issue new
     stored.revoked = True
 
-    result2 = await db.execute(select(User).where(User.id == user_id))
+    result2 = await db.execute(
+        select(User).options(selectinload(User.role)).where(User.id == user_id)
+    )
     user: User = result2.scalar_one()
 
-    new_access = create_access_token(user.id, user.role.name, user.company_id)
+    new_access     = create_access_token(user.id, user.role.name, user.company_id)
     new_refresh_raw = create_refresh_token(user.id)
 
     expires_at = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
@@ -191,7 +195,7 @@ async def disable_totp(user: User, password: str, db: AsyncSession) -> bool:
     if not verify_password(password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect password")
     user.totp_enabled = False
-    user.totp_secret = None
+    user.totp_secret  = None
     await db.commit()
     return True
 
@@ -199,9 +203,8 @@ async def disable_totp(user: User, password: str, db: AsyncSession) -> bool:
 async def change_password(user: User, current: str, new: str, db: AsyncSession) -> None:
     if not verify_password(current, user.hashed_password):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
-    user.hashed_password = hash_password(new)
+    user.hashed_password     = hash_password(new)
     user.password_changed_at = datetime.now(timezone.utc)
-    # Revoke all refresh tokens on password change
     await db.execute(
         update(RefreshToken)
         .where(RefreshToken.user_id == user.id)

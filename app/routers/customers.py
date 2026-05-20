@@ -195,3 +195,30 @@ def _fmt(c: Customer) -> dict:
         ],
         "created_at": c.created_at,
     }
+
+
+# ── Customer Portal Login ─────────────────────────────────────────────────────
+from app.services.invitation_service import create_customer_portal_user
+
+@router.post("/{customer_id}/create-portal-user")
+async def create_portal_user(
+    customer_id: int,
+    db: DB,
+    current_user: CurrentUser,
+    send_email: bool = True,
+):
+    """Create portal login for a customer — sends welcome email with credentials."""
+    try:
+        result = await create_customer_portal_user(
+            db=db,
+            customer_id=customer_id,
+            company_id=current_user.company_id,
+            created_by_id=current_user.id,
+            send_welcome=send_email,
+        )
+        return {
+            "message": "Portal login created successfully",
+            **result,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
