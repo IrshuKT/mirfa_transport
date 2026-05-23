@@ -3,7 +3,7 @@ import secrets
 from typing import Annotated, List, Optional
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +13,8 @@ from app.core.database import get_db
 from app.core.dependencies import CurrentUser, DispatcherRequired, DriverRequired
 from app.models.auth import User
 from app.models.job import Dispatch, DispatchStatus, Job, JobStatus, ServiceRequest
+import os, shutil
+from fastapi import File, UploadFile
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 DB = Annotated[AsyncSession, Depends(get_db)]
@@ -34,7 +36,34 @@ class JobCreate(BaseModel):
     notes: Optional[str] = None
     priority: str = "normal"
     service_request_id: Optional[int] = None
+    assigned_to_id: Optional[int] = None
 
+class JobUpdate(BaseModel):
+    pickup_address: Optional[str] = None
+    delivery_address: Optional[str] = None
+    pickup_lat: Optional[float] = None
+    pickup_lng: Optional[float] = None
+    delivery_lat: Optional[float] = None
+    delivery_lng: Optional[float] = None
+    scheduled_pickup_at: Optional[datetime] = None
+    scheduled_delivery_at: Optional[datetime] = None
+    agreed_amount: Optional[float] = None
+    notes: Optional[str] = None
+    internal_notes: Optional[str] = None
+    priority: Optional[str] = None
+    customer_id: Optional[int] = None
+    assigned_to_id: Optional[int] = None
+
+class JobDocumentOut(BaseModel):
+    id: int
+    job_id: int
+    doc_type: str
+    file_name: str
+    file_url: str
+    file_size_bytes: Optional[int] = None
+    mime_type: Optional[str] = None
+    notes: Optional[str] = None
+    uploaded_by_id: int
 
 class DispatchCreate(BaseModel):
     driver_id: int
@@ -69,8 +98,12 @@ async def list_jobs(
     customer_id: Optional[int] = None,
     driver_id: Optional[int] = None,
     search: Optional[str] = None,
+    assigned_to_id: Optional[int] = None,
 ):
     q = select(Job).where(Job.company_id == current_user.company_id)
+    
+    if assigned_to_id:
+        q = q.where(Job.assigned_to_id == assigned_to_id)
 
     if current_user.role.name == "driver":
         # Drivers see only their dispatched jobs
@@ -93,13 +126,106 @@ async def list_jobs(
 
     return {"total": total, "page": page, "page_size": page_size, "results": [_job_dict(j) for j in jobs]}
 
+@router.patch("/{job_id}", response_model=dict)
+async def update_job(
+    job_id: int,
+    payload: JobUpdate,
+    db: DB,
+    current_user: CurrentUser,
+):
+    job = await _get_or_404(job_id, db)
+    _assert_company(current_user, job)
+
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(job, field, value)
+
+    await db.commit()
+    await db.refresh(job)
+    return _job_dict(job)
+
+@router.get("/{job_id}/documents", response_model=list)
+async def get_job_documents(job_id: int, db: DB, current_user: CurrentUser):
+    from app.models.job import JobDocument
+    job = await _get_or_404(job_id, db)
+    _assert_company(current_user, job)
+
+    result = await db.execute(
+        select(JobDocument).where(JobDocument.job_id == job_id)
+    )
+    docs = result.scalars().all()
+    return [
+        {
+            "id": d.id,
+            "job_id": d.job_id,
+            "doc_type": d.doc_type,
+            "file_name": d.file_name,
+            "file_url": d.file_url,
+            "file_size_bytes": d.file_size_bytes,
+            "mime_type": d.mime_type,
+            "notes": d.notes,
+            "uploaded_by_id": d.uploaded_by_id,
+        }
+        for d in docs
+    ]
+
+
+@router.post("/{job_id}/documents", response_model=dict, status_code=status.HTTP_201_CREATED)
+async def upload_job_document(
+    job_id: int,
+    db: DB,
+    current_user: CurrentUser,
+    file: UploadFile = File(...),
+    doc_type: str = "BOL",
+    notes: Optional[str] = None,
+):
+    from app.models.job import JobDocument
+
+    job = await _get_or_404(job_id, db)
+    _assert_company(current_user, job)
+
+    # Save file to disk (adjust path to your static/media setup)
+    upload_dir = f"media/jobs/{job_id}"
+    os.makedirs(upload_dir, exist_ok=True)
+    file_path = f"{upload_dir}/{file.filename}"
+
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    doc = JobDocument(
+        job_id=job_id,
+        uploaded_by_id=current_user.id,
+        doc_type=doc_type,
+        file_name=file.filename,
+        file_url=f"/{file_path}",        # adjust to your static URL base
+        file_size_bytes=file.size,
+        mime_type=file.content_type,
+        notes=notes,
+    )
+    db.add(doc)
+    await db.commit()
+    await db.refresh(doc)
+
+    return {
+        "id": doc.id,
+        "job_id": doc.job_id,
+        "doc_type": doc.doc_type,
+        "file_name": doc.file_name,
+        "file_url": doc.file_url,
+        "file_size_bytes": doc.file_size_bytes,
+        "mime_type": doc.mime_type,
+        "notes": doc.notes,
+        "uploaded_by_id": doc.uploaded_by_id,
+    }
 
 @router.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
 async def create_job(
+    request: Request,
     payload: JobCreate,
     db: DB,
     current_user: CurrentUser,
 ):
+    print("RAW BODY:", await request.body())
+    print("PAYLOAD:", payload.model_dump())
     # Auto-generate job number: JOB-YYYYMMDD-XXXX
     from datetime import date
     date_str = date.today().strftime("%Y%m%d")
@@ -357,4 +483,6 @@ def _job_dict(job: Job) -> dict:
         "tracking_token": job.tracking_token,
         "notes": job.notes,
         "created_at": job.created_at,
+        "updated_at": job.updated_at,
+        "assigned_to_id": job.assigned_to_id,
     }

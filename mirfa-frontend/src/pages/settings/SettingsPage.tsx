@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Key, User as UserIcon, Shield, Trash2, Eye, EyeOff } from 'lucide-react'
-import { authApi, usersApi, rolesApi, inviteApi } from '@/api/services'
+import { Plus, Key, User as UserIcon, Shield, Trash2, Eye, EyeOff, Building2 } from 'lucide-react'
+import { authApi, usersApi, rolesApi, inviteApi,companiesApi } from '@/api/services'
 import { useAuthStore } from '@/stores/authStore'
 import {
   Button, Card, CardBody, CardHeader, PageHeader,
@@ -13,6 +13,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import toast from 'react-hot-toast'
 import { formatDate } from '@/lib/utils'
+
 
 
 // ── Role colours ──────────────────────────────────────────────────────────────
@@ -41,7 +42,7 @@ const createSchema = z.object({
 type CreateForm = z.infer<typeof createSchema>
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
-type Tab = 'users' | 'profile' | 'password'
+type Tab = 'users' | 'profile' | 'password'|'company'
 
 export default function SettingsPage() {
   const { user } = useAuthStore()
@@ -52,7 +53,10 @@ export default function SettingsPage() {
     { id: 'users'    as Tab, label: 'Users',    icon: <UserIcon size={15} />, show: isAdmin },
     { id: 'profile'  as Tab, label: 'Profile',  icon: <Shield size={15} />,   show: true },
     { id: 'password' as Tab, label: 'Password', icon: <Key size={15} />,      show: true },
+    { id: 'company' as Tab, label: 'Company', icon: <Building2 size={15} />, show: isAdmin },
   ].filter(t => t.show)
+
+  
 
   return (
     <div className="space-y-5">
@@ -73,6 +77,7 @@ export default function SettingsPage() {
       {tab === 'users'    && isAdmin && <UsersTab />}
       {tab === 'profile'  && <ProfileTab />}
       {tab === 'password' && <PasswordTab />}
+      {tab === 'company' && isAdmin && <CompanyTab />}
     </div>
   )
 }
@@ -97,6 +102,15 @@ function UsersTab() {
   })
 
   const users = data?.data
+
+ const resetMutation = useMutation({
+  mutationFn: (id: number) => usersApi.resetPassword(id),
+  onSuccess: (res: any) => {
+    toast.success(`Temp password: ${res.data.temp_password}`, { duration: 10000 })
+  },
+  onError: () => toast.error('Failed to reset password'),
+})
+  
 
   return (
     <div className="space-y-4">
@@ -174,8 +188,18 @@ function UsersTab() {
                         className="text-red-500 hover:text-red-700 hover:bg-red-50">
                         Deactivate
                       </Button>
+                      
                     )}
+                    {u.id !== me?.id && (
+      <Button size="sm" variant="ghost"
+        icon={<Key size={13} />}
+        onClick={() => resetMutation.mutate(u.id)}
+        className="text-sky-500 hover:text-sky-700 hover:bg-sky-50">
+        Reset Password
+      </Button>
+    ) }
                   </Td>
+                 
                 </tr>
               ))}
             </tbody>
@@ -459,6 +483,127 @@ function PasswordTab() {
           <Button type="submit" loading={loading} disabled={!allOk || !currentPw} className="w-full">
             Update Password
           </Button>
+        </form>
+      </CardBody>
+    </Card>
+  )
+}
+
+function CompanyTab() {
+  const { user } = useAuthStore()
+  const qc = useQueryClient()
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['my-company'],
+    queryFn: () => companiesApi.getMe(),
+  })
+
+  const company = data?.data
+
+  const { register, handleSubmit, reset, formState: { errors, isDirty } } = useForm({
+    values: company ? {
+      name:             company.name,
+      trade_license_no: company.trade_license_no || '',
+      trn:              company.trn || '',
+      address:          company.address || '',
+      city:             company.city || '',
+      phone:            company.phone || '',
+      email:            company.email || '',
+      vat_rate:         company.vat_rate ?? 0.05,
+      currency:         company.currency || 'AED',
+    } : undefined,
+  })
+
+  const mutation = useMutation({
+    mutationFn: (data: any) => companiesApi.update(company.id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['my-company'] })
+      toast.success('Company profile updated!')
+    },
+    onError: () => toast.error('Failed to update company'),
+  })
+
+  if (isLoading) return <PageLoader />
+
+  return (
+    <Card className="max-w-2xl">
+      <CardHeader>
+        <h3 className="font-semibold text-slate-800">Company Profile</h3>
+        <p className="text-sm text-slate-500 mt-0.5">Update your company information</p>
+      </CardHeader>
+      <CardBody>
+        <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4">
+          
+          {/* Company Name */}
+          <Input label="Company Name *" {...register('name', { required: true })} />
+
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Trade License No" {...register('trade_license_no')} />
+            <Input label="TRN (Tax Reg No)" {...register('trn')} />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Phone" {...register('phone')} />
+            <Input label="Email" type="email" {...register('email')} />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="City" {...register('city')} />
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Currency</label>
+              <select {...register('currency')}
+                className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500">
+                <option value="AED">AED — UAE Dirham</option>
+                <option value="USD">USD — US Dollar</option>
+                <option value="EUR">EUR — Euro</option>
+                <option value="GBP">GBP — British Pound</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">VAT Rate</label>
+              <div className="relative">
+                <input type="number" step="0.01" min="0" max="1"
+                  {...register('vat_rate', { valueAsNumber: true })}
+                  className="block w-full rounded-lg border border-slate-300 px-3 py-2 pr-10 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500" />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">%</span>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">e.g. 0.05 = 5% VAT</p>
+            </div>
+          </div>
+
+          <Input label="Address" {...register('address')} />
+
+          {/* Read-only info */}
+          <div className="bg-slate-50 rounded-lg p-4 grid grid-cols-2 gap-3 text-sm border border-slate-100">
+            <div>
+              <p className="text-xs text-slate-400">Company ID</p>
+              <p className="font-medium text-slate-700">#{company?.id}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400">Status</p>
+              <p className="font-medium text-green-600">{company?.is_active ? '✓ Active' : 'Inactive'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400">Country</p>
+              <p className="font-medium text-slate-700">{company?.country}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400">Created</p>
+              <p className="font-medium text-slate-700">{formatDate(company?.created_at)}</p>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
+            <Button type="button" variant="outline" onClick={() => reset()} disabled={!isDirty}>
+              Reset
+            </Button>
+            <Button type="submit" loading={mutation.isPending} disabled={!isDirty}>
+              Save Changes
+            </Button>
+          </div>
         </form>
       </CardBody>
     </Card>

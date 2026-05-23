@@ -4,6 +4,7 @@ import type {
   Employee, Driver, Vehicle, Invoice, Bank, Account, EntityDocument, Paginated
 } from '@/types'
 
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 export const authApi = {
   login: (email: string, password: string, totp_code?: string) =>
@@ -26,16 +27,10 @@ export const usersApi = {
   get: (id: number) => api.get<User>(`/users/${id}`),
   update: (id: number, data: any) => api.patch<User>(`/users/${id}`, data),
   deactivate: (id: number) => api.delete(`/users/${id}`),
+  resetPassword: (id: number) => api.post(`/users/${id}/reset-password`),
 }
 
-// ── Companies ─────────────────────────────────────────────────────────────────
-export const companiesApi = {
-  list: (params?: Record<string, any>) => api.get<Paginated<Company>>('/companies', { params }),
-  get: (id: number) => api.get<Company>(`/companies/${id}`),
-  getMyCompany: () => api.get<Company>('/companies/me'),
-  create: (data: any) => api.post<Company>('/companies', data),
-  update: (id: number, data: any) => api.patch<Company>(`/companies/${id}`, data),
-}
+
 
 // ── Customers ─────────────────────────────────────────────────────────────────
 export const customersApi = {
@@ -64,12 +59,21 @@ export const jobsApi = {
   list: (params?: Record<string, any>) => api.get<Paginated<Job>>('/jobs', { params }),
   get: (id: number) => api.get<Job>(`/jobs/${id}`),
   create: (data: any) => api.post<Job>('/jobs', data),
+  update: (id: number, data: any) => api.patch<Job>(`/jobs/${id}`, data),
   updateStatus: (id: number, status: string) =>
     api.patch(`/jobs/${id}/status`, null, { params: { new_status: status } }),
   dispatch: (id: number, data: { driver_id: number; vehicle_id?: number }) =>
     api.post(`/jobs/${id}/dispatch`, data),
   track: (token: string) => api.get(`/jobs/track/${token}`),
   locationPing: (data: any) => api.post('/jobs/location/ping', data),
+  assignDriver: (id: number, driver_id: number) =>
+    api.patch(`/jobs/${id}`, { driver_id }),
+  getDocuments:   (id: number) => api.get(`/jobs/${id}/documents`),
+  uploadDocument: (id: number, formData: FormData) =>
+    api.post(`/jobs/${id}/documents`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+
 }
 
 // ── Quotations ────────────────────────────────────────────────────────────────
@@ -116,6 +120,7 @@ export const fleetApi = {
   get: (id: number) => api.get<Vehicle>(`/fleet/${id}`),
   create: (data: any) => api.post<Vehicle>('/fleet', data),
   update: (id: number, data: any) => api.patch<Vehicle>(`/fleet/${id}`, data),
+  delete: (id: number) => api.delete(`/fleet/${id}`),
   expiryAlerts: (days_ahead = 30) =>
     api.get('/fleet/expiry-alerts', { params: { days_ahead } }),
   listMaintenance: (id: number) => api.get(`/fleet/${id}/maintenance`),
@@ -221,4 +226,14 @@ export const inviteApi = {
     api.post(`/vendors/${vendor_id}/create-portal-user`, null, {
       params: { send_email },
     }),
+}
+
+
+// ── Companies ─────────────────────────────────────────────────────────────────
+export const companiesApi = {
+  list: (params?: Record<string, any>) => api.get<Paginated<Company>>('/companies', { params }),
+  get: (id: number) => api.get<Company>(`/companies/${id}`),
+  getMe: () => api.get<Company>('/companies/me'),
+  create: (data: any) => api.post<Company>('/companies', data),
+  update: (id: number, data: any) => api.patch<Company>(`/companies/${id}`, data),
 }

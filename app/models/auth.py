@@ -125,6 +125,7 @@ class User(Base):
         "RefreshToken", back_populates="user", cascade="all, delete-orphan"
     )
     audit_logs: Mapped[List["AuditLog"]] = relationship("AuditLog", back_populates="user")
+    force_password_change: Mapped[bool] = mapped_column(default=False)
 
 
 # ── Refresh Token ─────────────────────────────────────────────────────────────

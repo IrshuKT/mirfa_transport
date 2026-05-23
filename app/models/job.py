@@ -144,7 +144,8 @@ class Job(Base):
     location_pings: Mapped[List["DriverLocationPing"]] = relationship(
         "DriverLocationPing", back_populates="job"
     )
-
+    # In models/job.py — add to Job class
+    assigned_to_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
 
 # ── Dispatch ─────────────────────────────────────────────────────────────────
 

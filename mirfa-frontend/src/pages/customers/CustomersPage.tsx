@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Eye } from 'lucide-react'
 import { customersApi, inviteApi } from '@/api/services'
 import {
   Button, Card, CardHeader, Table, Th, Td,
@@ -9,13 +8,15 @@ import {
 } from '@/components/ui'
 import { useForm } from 'react-hook-form'
 import toast from 'react-hot-toast'
+import { useNavigate } from 'react-router-dom'
+import { Plus, Eye, Pencil } from 'lucide-react'
 
 export default function CustomersPage() {
+  const navigate = useNavigate()
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
-  const [showCreate, setShowCreate] = useState(false)
-  const [selected, setSelected] = useState<any>(null)
+  
 
   const { data, isLoading } = useQuery({
     queryKey: ['customers', page, search],
@@ -26,7 +27,7 @@ export default function CustomersPage() {
   return (
     <div className="space-y-5">
       <PageHeader title="Customers" subtitle={customers ? `${customers.total} customers` : undefined}
-        actions={<Button icon={<Plus size={16} />} onClick={() => setShowCreate(true)}>New Customer</Button>}
+        actions={<Button icon={<Plus size={16} />} onClick={() => navigate('/customers/new')}>New Customer</Button>}
       />
       <Card>
         <CardHeader>
@@ -46,7 +47,7 @@ export default function CustomersPage() {
                   <Td>{c.phone || c.mobile || '—'}</Td>
                   <Td>{c.credit_days} days</Td>
                   <Td><Badge className={c.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}>{c.is_active ? 'Active' : 'Inactive'}</Badge></Td>
-                  <Td><Button size="sm" variant="ghost" icon={<Eye size={14} />} onClick={() => setSelected(c)}>View</Button></Td>
+                  <Td><Button size="sm" variant="ghost" icon={<Eye size={14} />} onClick={() => navigate(`/customers/${c.id}/edit`)}>View</Button></Td>
                 </tr>
               ))}
             </tbody>
@@ -62,8 +63,7 @@ export default function CustomersPage() {
           </div>
         )}
       </Card>
-      <CustomerFormModal open={showCreate} onClose={() => setShowCreate(false)} />
-      {selected && <CustomerDetailModal customer={selected} onClose={() => setSelected(null)} />}
+     
     </div>
   )
 }

@@ -26,6 +26,7 @@ export interface TokenResponse {
   role: Role
   company_id?: number
   totp_required?: boolean
+  force_password_change?: boolean
 }
 
 // ── Company ───────────────────────────────────────────────────────────────────
@@ -125,6 +126,8 @@ export interface Job {
   tracking_token?: string
   notes?: string
   created_at: string
+  updated_at: string
+  assigned_to_id?: number
 }
 
 // ── Quotation ─────────────────────────────────────────────────────────────────

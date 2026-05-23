@@ -3,6 +3,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
@@ -12,7 +13,7 @@ from app.routers import auth, users, jobs, customers, vendors, quotations
 from app.routers import employees, drivers, fleet, documents, companies
 from app.routers.accounting import coa, banks, invoices, reports
 from app.routers.accounting.receipts import receipts_router, payments_router, journals_router
-
+import os
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -30,6 +31,9 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
     lifespan=lifespan,
 )
+os.makedirs("media", exist_ok=True)
+
+app.mount("/media", StaticFiles(directory="media"), name="media")
 
 app.add_middleware(
     CORSMiddleware,

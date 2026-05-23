@@ -3,10 +3,11 @@ import {
   Briefcase, Users, FileText, AlertTriangle,
   TrendingUp, Clock, CheckCircle, XCircle,
 } from 'lucide-react'
-import { jobsApi, customersApi, invoicesApi, documentsApi } from '@/api/services'
+import { jobsApi, customersApi, invoicesApi, documentsApi, authApi } from '@/api/services'
 import { StatCard, Card, CardHeader, CardBody, PageLoader, StatusBadge } from '@/components/ui'
 import { formatCurrency, formatDate, getUrgencyColor } from '@/lib/utils'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
+import { Navigate } from 'react-router-dom'
 
 export default function DashboardPage() {
   const { data: jobs, isLoading: jobsLoading } = useQuery({
@@ -18,6 +19,11 @@ export default function DashboardPage() {
     queryKey: ['customers', 'count'],
     queryFn: () => customersApi.list({ page_size: 1 }),
   })
+  
+  const { data: me } = useQuery({ queryKey: ['me'], queryFn: () => authApi.me(), select: r => r.data })
+  if (me?.role === 'driver' || me?.role === 'staff') {
+  return <Navigate to="/my-jobs" replace />
+  }
 
   const { data: invoices } = useQuery({
     queryKey: ['invoices', 'dashboard'],
@@ -48,6 +54,8 @@ export default function DashboardPage() {
   ] : []
 
   if (jobsLoading) return <PageLoader />
+  
+ 
 
   return (
     <div className="space-y-6">

@@ -111,6 +111,7 @@ async def login(
         user_id=user.id,
         role=user.role.name,
         company_id=user.company_id,
+        force_password_change=user.force_password_change,
     )
 
 
@@ -203,8 +204,9 @@ async def disable_totp(user: User, password: str, db: AsyncSession) -> bool:
 async def change_password(user: User, current: str, new: str, db: AsyncSession) -> None:
     if not verify_password(current, user.hashed_password):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
-    user.hashed_password     = hash_password(new)
+    user.hashed_password = hash_password(new)
     user.password_changed_at = datetime.now(timezone.utc)
+    user.force_password_change = False  # 👈 add this
     await db.execute(
         update(RefreshToken)
         .where(RefreshToken.user_id == user.id)

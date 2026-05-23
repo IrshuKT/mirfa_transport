@@ -10,8 +10,11 @@ from app.core.security import hash_password
 from app.models.auth import User, UserStatus, Role
 from app.schemas.auth import UserCreate, UserResponse, UserUpdate
 
+from app.services.invitation_service import _generate_temp_password
+
 router = APIRouter(prefix="/users", tags=["Users"])
 DB = Annotated[AsyncSession, Depends(get_db)]
+
 
 
 # ── Roles list — MUST be before /{user_id} routes ────────────────────────────
@@ -38,6 +41,7 @@ async def list_users(
 
     if current_user.role.name != "super_admin":
         q = q.where(User.company_id == current_user.company_id)
+        q = q.join(Role).where(Role.name != "super_admin")
     if search:
         q = q.where(
             User.full_name.ilike(f"%{search}%") | User.email.ilike(f"%{search}%")
@@ -195,3 +199,15 @@ async def invite_user(payload: InviteUserRequest, db: DB, current_user: CurrentU
         return {"message": f"User '{payload.full_name}' created successfully", **result}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    
+
+    #// user password rest ----------------
+
+@router.post("/{user_id}/reset-password", dependencies=[AdminRequired])
+async def reset_password(user_id: int, db: DB, current_user: CurrentUser):
+    user = await _get_or_404(user_id, db)
+    _assert_access(current_user, user)
+    temp_password = _generate_temp_password()
+    user.hashed_password = hash_password(temp_password)
+    await db.commit()
+    return {"temp_password": temp_password, "email": user.email}

@@ -20,7 +20,8 @@ class TokenResponse(BaseModel):
     user_id: int
     role: str
     company_id: Optional[int]
-    totp_required: bool = False            # signals frontend to show TOTP prompt
+    totp_required: bool = False
+    force_password_change: bool = False            
 
 
 class RefreshRequest(BaseModel):

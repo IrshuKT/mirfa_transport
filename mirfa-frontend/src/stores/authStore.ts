@@ -7,9 +7,12 @@ interface AuthState {
   refreshToken: string | null
   user: User | null
   isAuthenticated: boolean
+  forcePasswordChange: boolean
 
   setTokens: (access: string, refresh: string) => void
+  
   setUser: (user: User) => void
+  setForcePasswordChange: (v: boolean) => void
   logout: () => void
 
   // helpers
@@ -27,12 +30,12 @@ export const useAuthStore = create<AuthState>()(
       refreshToken: null,
       user: null,
       isAuthenticated: false,
-
+      forcePasswordChange: false,
       setTokens: (access, refresh) =>
         set({ accessToken: access, refreshToken: refresh, isAuthenticated: true }),
 
       setUser: (user) => set({ user }),
-
+      setForcePasswordChange: (v) => set({ forcePasswordChange: v }),
       logout: () =>
         set({ accessToken: null, refreshToken: null, user: null, isAuthenticated: false }),
 
@@ -59,6 +62,7 @@ export const useAuthStore = create<AuthState>()(
         refreshToken: state.refreshToken,
         user: state.user,
         isAuthenticated: state.isAuthenticated,
+        forcePasswordChange: state.forcePasswordChange,
       }),
     }
   )

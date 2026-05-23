@@ -18,10 +18,11 @@ type LoginForm = z.infer<typeof loginSchema>
 
 export default function LoginPage() {
   const navigate = useNavigate()
-  const { setTokens, setUser } = useAuthStore()
+  const { setTokens, setUser,setForcePasswordChange } = useAuthStore()
   const [showPassword, setShowPassword] = useState(false)
   const [totpRequired, setTotpRequired] = useState(false)
   const [loading, setLoading] = useState(false)
+
 
   const { register, handleSubmit, formState: { errors } } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
@@ -44,6 +45,12 @@ export default function LoginPage() {
       // Fetch user profile
       const { data: user } = await authApi.me()
       setUser(user)
+
+      if (tokenData.force_password_change) {
+      setForcePasswordChange(true)
+      navigate('/change-password')
+      return
+      }
 
       toast.success(`Welcome back, ${user.full_name}!`)
 

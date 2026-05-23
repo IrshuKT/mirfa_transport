@@ -21,6 +21,11 @@ import { VendorsPage, EmployeesPage, FleetPage } from '@/pages/other/OtherPages'
 import DriversPage from '@/pages/drivers/DriversPage'
 import CompaniesPage from '@/pages/companies/CompaniesPage'
 import SettingsPage from '@/pages/settings/SettingsPage'
+import ChangePasswordPage from '@/pages/auth/ChangePasswordPage'
+import CustomerFormPage from '@/pages/customers/CustomerFormPage'
+import JobFormPage from '@/pages/jobs/JobFormPage'
+import { JobDetailPage } from './pages/jobs/JobDetailPage'
+import MyJobsPage from '@/pages/jobs/MyJobsPage'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000, refetchOnWindowFocus: false } },
@@ -45,12 +50,19 @@ export default function App() {
         <Toaster position="top-right" toastOptions={{ duration: 4000, style: { fontSize: '14px', borderRadius: '10px' } }} />
         <Routes>
           <Route path="/login" element={<RequireGuest><LoginPage /></RequireGuest>} />
+          <Route path="/change-password" element={<ChangePasswordPage />} />
           <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard"  element={<DashboardPage />} />
             <Route path="/jobs"       element={<JobsPage />} />
+            <Route path="/jobs/new"      element={<JobFormPage />} />
+            <Route path="/jobs/:id"      element={<JobFormPage />} />
+            <Route path="/jobs/:id/view" element={<JobDetailPage />} />
+            <Route path="/my-jobs"      element={<MyJobsPage />} />
             <Route path="/quotations" element={<QuotationsPage />} />
             <Route path="/customers"  element={<CustomersPage />} />
+            <Route path="/customers/new"  element={<CustomerFormPage />} />
+            <Route path="/customers/:id/edit" element={<CustomerFormPage />} /> 
             <Route path="/vendors"    element={<VendorsPage />} />
             <Route path="/employees"  element={<EmployeesPage />} />
             <Route path="/fleet"      element={<FleetPage />} />
