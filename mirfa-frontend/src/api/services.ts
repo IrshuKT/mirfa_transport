@@ -39,6 +39,7 @@ export const customersApi = {
   create: (data: any) => api.post<Customer>('/customers', data),
   update: (id: number, data: any) => api.patch<Customer>(`/customers/${id}`, data),
   deactivate: (id: number) => api.delete(`/customers/${id}`),
+  nextCode: () => api.get<{ code: string }>('/customers/next-code'),
   addContact: (customerId: number, data: any) =>
     api.post(`/customers/${customerId}/contacts`, data),
   deleteContact: (customerId: number, contactId: number) =>
@@ -221,6 +222,11 @@ export const inviteApi = {
       params: { send_email },
     }),
 
+  revokeCustomerPortal: (customer_id: number) =>
+    api.delete(`/customers/${customer_id}/portal-user`),
+
+  
+
   // Create vendor portal login
   createVendorPortal: (vendor_id: number, send_email = true) =>
     api.post(`/vendors/${vendor_id}/create-portal-user`, null, {
@@ -236,4 +242,12 @@ export const companiesApi = {
   getMe: () => api.get<Company>('/companies/me'),
   create: (data: any) => api.post<Company>('/companies', data),
   update: (id: number, data: any) => api.patch<Company>(`/companies/${id}`, data),
+}
+
+export function getApiError(e: any): string {
+  const detail = e.response?.data?.detail
+  if (Array.isArray(detail)) {
+    return detail.map((err: any) => `${err.loc?.slice(-1)[0]}: ${err.msg}`).join(', ')
+  }
+  return detail || 'Something went wrong'
 }

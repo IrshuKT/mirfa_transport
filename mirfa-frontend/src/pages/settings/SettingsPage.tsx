@@ -48,7 +48,7 @@ export default function SettingsPage() {
   const { user } = useAuthStore()
   const [tab, setTab] = useState<Tab>('users')
   const isAdmin = user?.role === 'super_admin' || user?.role === 'company_admin'
-
+  
   const tabs = [
     { id: 'users'    as Tab, label: 'Users',    icon: <UserIcon size={15} />, show: isAdmin },
     { id: 'profile'  as Tab, label: 'Profile',  icon: <Shield size={15} />,   show: true },

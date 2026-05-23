@@ -55,6 +55,7 @@ export default function LoginPage() {
       toast.success(`Welcome back, ${user.full_name}!`)
 
       // Role-based redirect
+      
       if (user.role === 'driver') navigate('/driver')
       else navigate('/dashboard')
     } catch (err: any) {

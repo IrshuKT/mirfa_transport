@@ -13,6 +13,7 @@ from app.core.database import get_db
 from app.core.dependencies import CurrentUser, DispatcherRequired, DriverRequired
 from app.models.auth import User
 from app.models.job import Dispatch, DispatchStatus, Job, JobStatus, ServiceRequest
+from app.models.entities import Customer
 import os, shutil
 from fastapi import File, UploadFile
 
@@ -20,7 +21,7 @@ router = APIRouter(prefix="/jobs", tags=["Jobs"])
 DB = Annotated[AsyncSession, Depends(get_db)]
 
 
-# ── Schemas (inline for brevity — move to schemas/job.py in full build) ────────
+# ── Schemas ───────────────────────────────────────────────────────────────────
 
 class JobCreate(BaseModel):
     customer_id: int
@@ -69,13 +70,11 @@ class DispatchCreate(BaseModel):
     driver_id: int
     vehicle_id: Optional[int] = None
 
-
 class PODUpdate(BaseModel):
     pod_signature_url: Optional[str] = None
     pod_photo_url: Optional[str] = None
     pod_notes: Optional[str] = None
     pod_received_by: Optional[str] = None
-
 
 class LocationPing(BaseModel):
     lat: float
@@ -84,6 +83,53 @@ class LocationPing(BaseModel):
     speed_kmh: Optional[float] = None
     heading: Optional[float] = None
     job_id: Optional[int] = None
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+async def _get_or_404(job_id: int, db: AsyncSession) -> Job:
+    result = await db.execute(select(Job).where(Job.id == job_id))
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+def _assert_company(user: User, job: Job):
+    if user.role.name != "super_admin" and user.company_id != job.company_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+
+async def _get_portal_customer(user: User, db: AsyncSession) -> Optional[Customer]:
+    """Return the Customer linked to a customer_portal user, or None."""
+    result = await db.execute(
+        select(Customer).where(Customer.portal_user_id == user.id)
+    )
+    return result.scalar_one_or_none()
+
+
+def _job_dict(job: Job) -> dict:
+    return {
+        "id": job.id,
+        "job_no": job.job_no,
+        "status": job.status,
+        "priority": job.priority,
+        "customer_id": job.customer_id,
+        "pickup_address": job.pickup_address,
+        "delivery_address": job.delivery_address,
+        "scheduled_pickup_at": job.scheduled_pickup_at,
+        "scheduled_delivery_at": job.scheduled_delivery_at,
+        "actual_pickup_at": job.actual_pickup_at,
+        "actual_delivery_at": job.actual_delivery_at,
+        "agreed_amount": float(job.agreed_amount) if job.agreed_amount else None,
+        "currency": job.currency,
+        "is_invoiced": job.is_invoiced,
+        "tracking_token": job.tracking_token,
+        "notes": job.notes,
+        "created_at": job.created_at,
+        "updated_at": job.updated_at,
+        "assigned_to_id": job.assigned_to_id,
+    }
 
 
 # ── CRUD ──────────────────────────────────────────────────────────────────────
@@ -101,30 +147,100 @@ async def list_jobs(
     assigned_to_id: Optional[int] = None,
 ):
     q = select(Job).where(Job.company_id == current_user.company_id)
-    
-    if assigned_to_id:
-        q = q.where(Job.assigned_to_id == assigned_to_id)
 
-    if current_user.role.name == "driver":
-        # Drivers see only their dispatched jobs
+    # ── Portal users: scope to their customer only ────────────────────────────
+    if current_user.role.name == "customer_portal":
+        portal_customer = await _get_portal_customer(current_user, db)
+        if not portal_customer:
+            # No linked customer → return empty
+            return {"total": 0, "page": page, "page_size": page_size, "pages": 1, "results": []}
+        q = q.where(Job.customer_id == portal_customer.id)
+
+    # ── Drivers: only their dispatched jobs ───────────────────────────────────
+    elif current_user.role.name == "driver":
         q = (
             select(Job)
             .join(Dispatch, Dispatch.job_id == Job.id)
-            .join(Job.company_id == current_user.company_id)
+            .where(
+                Job.company_id == current_user.company_id,
+                Dispatch.driver_id == current_user.id,
+            )
         )
 
+    # ── Optional filters (apply after role scoping) ───────────────────────────
+    if assigned_to_id:
+        q = q.where(Job.assigned_to_id == assigned_to_id)
     if status_filter:
         q = q.where(Job.status == status_filter)
-    if customer_id:
+    if customer_id and current_user.role.name != "customer_portal":
+        # Don't allow portal users to override their scoped customer_id
         q = q.where(Job.customer_id == customer_id)
     if search:
         q = q.where(Job.job_no.ilike(f"%{search}%"))
 
     total = await db.scalar(select(func.count()).select_from(q.subquery()))
-    result = await db.execute(q.order_by(Job.created_at.desc()).offset((page - 1) * page_size).limit(page_size))
+    result = await db.execute(
+        q.order_by(Job.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
     jobs = result.scalars().all()
+    pages = max(1, -(-total // page_size))  # ceiling division
 
-    return {"total": total, "page": page, "page_size": page_size, "results": [_job_dict(j) for j in jobs]}
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": pages,
+        "results": [_job_dict(j) for j in jobs],
+    }
+
+
+@router.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
+async def create_job(
+    request: Request,
+    payload: JobCreate,
+    db: DB,
+    current_user: CurrentUser,
+):
+    # Portal users: force customer_id to their own — ignore whatever was sent
+    if current_user.role.name == "customer_portal":
+        portal_customer = await _get_portal_customer(current_user, db)
+        if not portal_customer:
+            raise HTTPException(status_code=403, detail="No customer account linked to this portal user")
+        payload.customer_id = portal_customer.id
+
+    from datetime import date
+    date_str = date.today().strftime("%Y%m%d")
+    count = await db.scalar(select(func.count(Job.id))) or 0
+    job_no = f"JOB-{date_str}-{count + 1:04d}"
+
+    job = Job(
+        company_id=current_user.company_id,
+        created_by_id=current_user.id,
+        job_no=job_no,
+        tracking_token=secrets.token_urlsafe(32),
+        **payload.model_dump(),
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+    return _job_dict(job)
+
+
+@router.get("/{job_id}", response_model=dict)
+async def get_job(job_id: int, db: DB, current_user: CurrentUser):
+    job = await _get_or_404(job_id, db)
+    _assert_company(current_user, job)
+
+    # Portal users can only view their own customer's jobs
+    if current_user.role.name == "customer_portal":
+        portal_customer = await _get_portal_customer(current_user, db)
+        if not portal_customer or job.customer_id != portal_customer.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+    return _job_dict(job)
+
 
 @router.patch("/{job_id}", response_model=dict)
 async def update_job(
@@ -142,6 +258,7 @@ async def update_job(
     await db.commit()
     await db.refresh(job)
     return _job_dict(job)
+
 
 @router.get("/{job_id}/documents", response_model=list)
 async def get_job_documents(job_id: int, db: DB, current_user: CurrentUser):
@@ -183,7 +300,6 @@ async def upload_job_document(
     job = await _get_or_404(job_id, db)
     _assert_company(current_user, job)
 
-    # Save file to disk (adjust path to your static/media setup)
     upload_dir = f"media/jobs/{job_id}"
     os.makedirs(upload_dir, exist_ok=True)
     file_path = f"{upload_dir}/{file.filename}"
@@ -196,7 +312,7 @@ async def upload_job_document(
         uploaded_by_id=current_user.id,
         doc_type=doc_type,
         file_name=file.filename,
-        file_url=f"/{file_path}",        # adjust to your static URL base
+        file_url=f"/{file_path}",
         file_size_bytes=file.size,
         mime_type=file.content_type,
         notes=notes,
@@ -217,40 +333,6 @@ async def upload_job_document(
         "uploaded_by_id": doc.uploaded_by_id,
     }
 
-@router.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
-async def create_job(
-    request: Request,
-    payload: JobCreate,
-    db: DB,
-    current_user: CurrentUser,
-):
-    print("RAW BODY:", await request.body())
-    print("PAYLOAD:", payload.model_dump())
-    # Auto-generate job number: JOB-YYYYMMDD-XXXX
-    from datetime import date
-    date_str = date.today().strftime("%Y%m%d")
-    count = await db.scalar(select(func.count(Job.id))) or 0
-    job_no = f"JOB-{date_str}-{count + 1:04d}"
-
-    job = Job(
-        company_id=current_user.company_id,
-        created_by_id=current_user.id,
-        job_no=job_no,
-        tracking_token=secrets.token_urlsafe(32),
-        **payload.model_dump(),
-    )
-    db.add(job)
-    await db.commit()
-    await db.refresh(job)
-    return _job_dict(job)
-
-
-@router.get("/{job_id}", response_model=dict)
-async def get_job(job_id: int, db: DB, current_user: CurrentUser):
-    job = await _get_or_404(job_id, db)
-    _assert_company(current_user, job)
-    return _job_dict(job)
-
 
 @router.patch("/{job_id}/status", response_model=dict)
 async def update_job_status(
@@ -266,6 +348,7 @@ async def update_job_status(
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Invalid status: {new_status}")
     await db.commit()
+    await db.refresh(job)
     return _job_dict(job)
 
 
@@ -303,7 +386,6 @@ async def update_dispatch_status(
     db: DB,
     current_user: CurrentUser,
 ):
-    """Drivers update their own dispatch status (en_route → at_pickup → loaded → delivered)."""
     result = await db.execute(
         select(Dispatch).where(Dispatch.id == dispatch_id, Dispatch.job_id == job_id)
     )
@@ -319,19 +401,17 @@ async def update_dispatch_status(
     now = datetime.now(timezone.utc)
     dispatch.status = ds
 
-    # Auto-stamp timestamps
     ts_map = {
-        DispatchStatus.ACCEPTED: "accepted_at",
-        DispatchStatus.EN_ROUTE: "en_route_at",
-        DispatchStatus.AT_PICKUP: "at_pickup_at",
-        DispatchStatus.LOADED: "loaded_at",
+        DispatchStatus.ACCEPTED:    "accepted_at",
+        DispatchStatus.EN_ROUTE:    "en_route_at",
+        DispatchStatus.AT_PICKUP:   "at_pickup_at",
+        DispatchStatus.LOADED:      "loaded_at",
         DispatchStatus.AT_DELIVERY: "at_delivery_at",
-        DispatchStatus.DELIVERED: "delivered_at",
+        DispatchStatus.DELIVERED:   "delivered_at",
     }
     if ds in ts_map:
         setattr(dispatch, ts_map[ds], now)
 
-    # Sync job status
     job = await _get_or_404(job_id, db)
     if ds in (DispatchStatus.EN_ROUTE, DispatchStatus.AT_PICKUP, DispatchStatus.LOADED, DispatchStatus.AT_DELIVERY):
         job.status = JobStatus.IN_PROGRESS
@@ -351,7 +431,6 @@ async def submit_pod(
     db: DB,
     current_user: CurrentUser,
 ):
-    """Submit proof of delivery."""
     result = await db.execute(
         select(Dispatch).where(Dispatch.id == dispatch_id, Dispatch.job_id == job_id)
     )
@@ -381,7 +460,6 @@ async def driver_location_ping(
     db: DB,
     current_user: CurrentUser,
 ):
-    """Called by driver app every N seconds to update live location."""
     from app.models.entities import Driver, DriverLocationPing
     from sqlalchemy import update
 
@@ -390,7 +468,6 @@ async def driver_location_ping(
     if not driver:
         raise HTTPException(status_code=404, detail="Driver profile not found")
 
-    # Update driver's current position
     await db.execute(
         update(Driver).where(Driver.id == driver.id).values(
             current_lat=payload.lat,
@@ -399,7 +476,6 @@ async def driver_location_ping(
         )
     )
 
-    # Store ping in history
     db.add(DriverLocationPing(
         driver_id=driver.id,
         job_id=payload.job_id,
@@ -417,7 +493,6 @@ async def driver_location_ping(
 
 @router.get("/track/{token}", response_model=dict)
 async def track_job(token: str, db: DB):
-    """Public endpoint — no auth required. Customer uses shareable link."""
     result = await db.execute(select(Job).where(Job.tracking_token == token))
     job = result.scalar_one_or_none()
     if not job:
@@ -446,43 +521,4 @@ async def track_job(token: str, db: DB):
         "actual_delivery_at": job.actual_delivery_at,
         "driver_location": driver_location,
         "dispatch_status": active_dispatch.status if active_dispatch else None,
-    }
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-async def _get_or_404(job_id: int, db: AsyncSession) -> Job:
-    result = await db.execute(select(Job).where(Job.id == job_id))
-    job = result.scalar_one_or_none()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return job
-
-
-def _assert_company(user: User, job: Job):
-    if user.role.name != "super_admin" and user.company_id != job.company_id:
-        raise HTTPException(status_code=403, detail="Access denied")
-
-
-def _job_dict(job: Job) -> dict:
-    return {
-        "id": job.id,
-        "job_no": job.job_no,
-        "status": job.status,
-        "priority": job.priority,
-        "customer_id": job.customer_id,
-        "pickup_address": job.pickup_address,
-        "delivery_address": job.delivery_address,
-        "scheduled_pickup_at": job.scheduled_pickup_at,
-        "scheduled_delivery_at": job.scheduled_delivery_at,
-        "actual_pickup_at": job.actual_pickup_at,
-        "actual_delivery_at": job.actual_delivery_at,
-        "agreed_amount": float(job.agreed_amount) if job.agreed_amount else None,
-        "currency": job.currency,
-        "is_invoiced": job.is_invoiced,
-        "tracking_token": job.tracking_token,
-        "notes": job.notes,
-        "created_at": job.created_at,
-        "updated_at": job.updated_at,
-        "assigned_to_id": job.assigned_to_id,
     }

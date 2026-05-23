@@ -32,12 +32,12 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       forcePasswordChange: false,
       setTokens: (access, refresh) =>
-        set({ accessToken: access, refreshToken: refresh, isAuthenticated: true }),
+        set({ accessToken: access, refreshToken: refresh, isAuthenticated: true,forcePasswordChange: false, }),
 
       setUser: (user) => set({ user }),
       setForcePasswordChange: (v) => set({ forcePasswordChange: v }),
       logout: () =>
-        set({ accessToken: null, refreshToken: null, user: null, isAuthenticated: false }),
+        set({ accessToken: null, refreshToken: null, user: null, isAuthenticated: false ,forcePasswordChange: false}),
 
       hasRole: (...roles) => {
         const role = get().user?.role

@@ -2,14 +2,29 @@ import { useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
-import { ArrowLeft, Save, Truck } from 'lucide-react'
+import { ArrowLeft, Save } from 'lucide-react'
 import { jobsApi, customersApi } from '@/api/services'
 import {
   Button, Card, CardBody, CardHeader,
   Input, PageHeader, PageLoader, Badge, StatusBadge,
 } from '@/components/ui'
-import { formatDate, formatCurrency } from '@/lib/utils'
 import toast from 'react-hot-toast'
+
+// ── helper: combine date + time strings → ISO ─────────────────────────────────
+function combineDatetime(date: string, time: string): string | null {
+  if (!date) return null
+  const t = time || '00:00'
+  return new Date(`${date}T${t}:00`).toISOString()
+}
+
+// ── helper: split ISO → { date, time } ───────────────────────────────────────
+function splitDatetime(iso?: string | null): { date: string; time: string } {
+  if (!iso) return { date: '', time: '' }
+  const d = new Date(iso)
+  const date = d.toISOString().slice(0, 10)
+  const time = d.toTimeString().slice(0, 5)
+  return { date, time }
+}
 
 export default function JobFormPage() {
   const navigate = useNavigate()
@@ -30,7 +45,7 @@ export default function JobFormPage() {
   })
   const customers = customersData?.data?.results || []
 
-  const { register, handleSubmit, reset, formState: { isDirty } } = useForm<any>({
+  const { register, handleSubmit, reset } = useForm<any>({
     defaultValues: {
       priority: 'normal',
       currency: 'AED',
@@ -38,48 +53,65 @@ export default function JobFormPage() {
   })
 
   useEffect(() => {
-    if (job) reset(job)
+    if (job) {
+      const pu = splitDatetime(job.scheduled_pickup_at)
+      const de = splitDatetime(job.scheduled_delivery_at)
+      const apu = splitDatetime(job.actual_pickup_at)
+      const ade = splitDatetime(job.actual_delivery_at)
+      reset({
+        ...job,
+        scheduled_pickup_date: pu.date,
+        scheduled_pickup_time: pu.time,
+        scheduled_delivery_date: de.date,
+        scheduled_delivery_time: de.time,
+        actual_pickup_date: apu.date,
+        actual_pickup_time: apu.time,
+        actual_delivery_date: ade.date,
+        actual_delivery_time: ade.time,
+      })
+    }
   }, [job])
 
   const mutation = useMutation({
-  mutationFn: (data: any) => {
-    // Convert empty strings to null for datetime fields
-    const datetimeFields = [
-      'scheduled_pickup_at', 'scheduled_delivery_at',
-      'actual_pickup_at', 'actual_delivery_at',
-    ]
-    const cleaned = { ...data }
-    datetimeFields.forEach(f => {
-      if (cleaned[f] === '' || cleaned[f] === undefined) {
-        cleaned[f] = null
-      } else if (cleaned[f]) {
-        // Convert datetime-local value to proper ISO string
-        cleaned[f] = new Date(cleaned[f]).toISOString()
+    mutationFn: (data: any) => {
+      const cleaned = { ...data }
+
+      // Recombine split date+time fields → ISO
+      cleaned.scheduled_pickup_at   = combineDatetime(data.scheduled_pickup_date,   data.scheduled_pickup_time)
+      cleaned.scheduled_delivery_at = combineDatetime(data.scheduled_delivery_date, data.scheduled_delivery_time)
+      cleaned.actual_pickup_at      = combineDatetime(data.actual_pickup_date,      data.actual_pickup_time)
+      cleaned.actual_delivery_at    = combineDatetime(data.actual_delivery_date,    data.actual_delivery_time)
+
+      // Remove split fields — backend doesn't know them
+      delete cleaned.scheduled_pickup_date
+      delete cleaned.scheduled_pickup_time
+      delete cleaned.scheduled_delivery_date
+      delete cleaned.scheduled_delivery_time
+      delete cleaned.actual_pickup_date
+      delete cleaned.actual_pickup_time
+      delete cleaned.actual_delivery_date
+      delete cleaned.actual_delivery_time
+
+      // Clean NaN number fields
+      const numberFields = ['agreed_amount', 'pickup_lat', 'pickup_lng', 'delivery_lat', 'delivery_lng']
+      numberFields.forEach(f => { if (isNaN(cleaned[f])) cleaned[f] = null })
+
+      return isEdit ? jobsApi.update(Number(id), cleaned) : jobsApi.create(cleaned)
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['jobs'] })
+      toast.success(isEdit ? 'Job updated!' : 'Job created!')
+      navigate('/jobs')
+    },
+    onError: (e: any) => {
+      const detail = e?.response?.data?.detail
+      if (Array.isArray(detail)) {
+        toast.error(detail.map((e: any) => `${e.loc?.at(-1)}: ${e.msg}`).join('\n'))
+      } else {
+        toast.error(detail || 'Failed')
       }
-    })
-
-    // Convert NaN to null for number fields
-    const numberFields = ['agreed_amount', 'pickup_lat', 'pickup_lng', 'delivery_lat', 'delivery_lng']
-    numberFields.forEach(f => {
-      if (isNaN(cleaned[f])) cleaned[f] = null
-    })
-
-    return isEdit ? jobsApi.update(Number(id), cleaned) : jobsApi.create(cleaned)
-  },
-  onSuccess: () => {
-    qc.invalidateQueries({ queryKey: ['jobs'] })
-    toast.success(isEdit ? 'Job updated!' : 'Job created!')
-    navigate('/jobs')
-  },
-  onError: (e: any) => {
-    const detail = e?.response?.data?.detail
-    if (Array.isArray(detail)) {
-      toast.error(detail.map((e: any) => `${e.loc?.at(-1)}: ${e.msg}`).join('\n'))
-    } else {
-      toast.error(detail || 'Failed')
-    }
-  },
-})
+    },
+  })
 
   const statusMutation = useMutation({
     mutationFn: (status: string) => jobsApi.updateStatus(Number(id), status),
@@ -100,11 +132,8 @@ export default function JobFormPage() {
         subtitle={isEdit ? undefined : 'Fill in the details below'}
         actions={
           <div className="flex items-center gap-2">
-            {isEdit && job && (
-              <StatusBadge status={job.status} />
-            )}
-            <Button variant="outline" icon={<ArrowLeft size={16} />}
-              onClick={() => navigate('/jobs')}>
+            {isEdit && job && <StatusBadge status={job.status} />}
+            <Button variant="outline" icon={<ArrowLeft size={16} />} onClick={() => navigate('/jobs')}>
               Back
             </Button>
           </div>
@@ -120,8 +149,10 @@ export default function JobFormPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Customer *</label>
-                <select {...register('customer_id', { required: true, valueAsNumber: true })}
-                  className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500">
+                <select
+                  {...register('customer_id', { required: true, valueAsNumber: true })}
+                  className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                >
                   <option value="">Select customer</option>
                   {customers.map((c: any) => (
                     <option key={c.id} value={c.id}>{c.name}</option>
@@ -130,8 +161,10 @@ export default function JobFormPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Priority</label>
-                <select {...register('priority')}
-                  className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500">
+                <select
+                  {...register('priority')}
+                  className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                >
                   <option value="low">Low</option>
                   <option value="normal">Normal</option>
                   <option value="high">High</option>
@@ -144,8 +177,10 @@ export default function JobFormPage() {
                 {...register('agreed_amount', { valueAsNumber: true })} />
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Currency</label>
-                <select {...register('currency')}
-                  className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500">
+                <select
+                  {...register('currency')}
+                  className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                >
                   <option value="AED">AED</option>
                   <option value="USD">USD</option>
                   <option value="EUR">EUR</option>
@@ -167,10 +202,8 @@ export default function JobFormPage() {
                 className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500" />
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <Input label="Pickup Lat" type="number" step="any"
-                {...register('pickup_lat', { valueAsNumber: true })} />
-              <Input label="Pickup Lng" type="number" step="any"
-                {...register('pickup_lng', { valueAsNumber: true })} />
+              <Input label="Pickup Lat" type="number" step="any" {...register('pickup_lat', { valueAsNumber: true })} />
+              <Input label="Pickup Lng" type="number" step="any" {...register('pickup_lng', { valueAsNumber: true })} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Delivery Address *</label>
@@ -179,36 +212,58 @@ export default function JobFormPage() {
                 className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500" />
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <Input label="Delivery Lat" type="number" step="any"
-                {...register('delivery_lat', { valueAsNumber: true })} />
-              <Input label="Delivery Lng" type="number" step="any"
-                {...register('delivery_lng', { valueAsNumber: true })} />
+              <Input label="Delivery Lat" type="number" step="any" {...register('delivery_lat', { valueAsNumber: true })} />
+              <Input label="Delivery Lng" type="number" step="any" {...register('delivery_lng', { valueAsNumber: true })} />
             </div>
           </CardBody>
         </Card>
 
-        {/* Schedule */}
+        {/* Schedule — split date + time */}
         <Card>
           <CardHeader><h3 className="font-semibold text-slate-800">Schedule</h3></CardHeader>
           <CardBody className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <Input label="Scheduled Pickup" type="datetime-local"
-                {...register('scheduled_pickup_at')} />
-              <Input label="Scheduled Delivery" type="datetime-local"
-                {...register('scheduled_delivery_at')} />
-            </div>
-            {isEdit && (
+
+            {/* Scheduled Pickup */}
+            <div>
+              <p className="text-sm font-medium text-slate-700 mb-2">Scheduled Pickup</p>
               <div className="grid grid-cols-2 gap-4">
-                <Input label="Actual Pickup" type="datetime-local"
-                  {...register('actual_pickup_at')} />
-                <Input label="Actual Delivery" type="datetime-local"
-                  {...register('actual_delivery_at')} />
+                <Input label="Date" type="date" {...register('scheduled_pickup_date')} />
+                <Input label="Time" type="time" {...register('scheduled_pickup_time')} />
               </div>
+            </div>
+
+            {/* Scheduled Delivery */}
+            <div>
+              <p className="text-sm font-medium text-slate-700 mb-2">Scheduled Delivery</p>
+              <div className="grid grid-cols-2 gap-4">
+                <Input label="Date" type="date" {...register('scheduled_delivery_date')} />
+                <Input label="Time" type="time" {...register('scheduled_delivery_time')} />
+              </div>
+            </div>
+
+            {/* Actual times — edit mode only */}
+            {isEdit && (
+              <>
+                <div>
+                  <p className="text-sm font-medium text-slate-700 mb-2">Actual Pickup</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <Input label="Date" type="date" {...register('actual_pickup_date')} />
+                    <Input label="Time" type="time" {...register('actual_pickup_time')} />
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-700 mb-2">Actual Delivery</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <Input label="Date" type="date" {...register('actual_delivery_date')} />
+                    <Input label="Time" type="time" {...register('actual_delivery_time')} />
+                  </div>
+                </div>
+              </>
             )}
           </CardBody>
         </Card>
 
-        {/* Dispatch info — view only in edit mode */}
+        {/* Dispatch info — view only */}
         {isEdit && (job as any)?.dispatches?.length > 0 && (
           <Card>
             <CardHeader><h3 className="font-semibold text-slate-800">Dispatch</h3></CardHeader>
@@ -226,7 +281,7 @@ export default function JobFormPage() {
           </Card>
         )}
 
-        {/* Status change — edit mode only */}
+        {/* Status change */}
         {isEdit && job && (
           <Card>
             <CardHeader><h3 className="font-semibold text-slate-800">Update Status</h3></CardHeader>
@@ -268,9 +323,7 @@ export default function JobFormPage() {
 
         {/* Actions */}
         <div className="flex justify-end gap-3">
-          <Button type="button" variant="outline" onClick={() => navigate('/jobs')}>
-            Cancel
-          </Button>
+          <Button type="button" variant="outline" onClick={() => navigate('/jobs')}>Cancel</Button>
           <Button type="submit" loading={mutation.isPending} icon={<Save size={15} />}>
             {isEdit ? 'Save Changes' : 'Create Job'}
           </Button>

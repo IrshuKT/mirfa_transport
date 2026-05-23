@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.database import get_db
 from app.core.dependencies import CurrentUser, StaffRequired
@@ -222,3 +222,22 @@ async def create_portal_user(
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    
+@router.get("/customers/next-code")
+def next_customer_code(db: Session = Depends(get_db)):
+    count = db.query(Customer).count()
+    return {"code": f"MRTC-{str(count + 1).zfill(2)}"}
+
+@router.delete("/customers/{customer_id}/portal")
+def revoke_customer_portal(customer_id: int, db: Session = Depends(get_db)):
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer or not customer.portal_user_id:
+        raise HTTPException(404, "No portal user found")
+    
+    user = db.query(User).filter(User.id == customer.portal_user_id).first()
+    if user:
+        db.delete(user)  # or set user.is_active = False if you prefer soft delete
+    
+    customer.portal_user_id = None
+    db.commit()
+    return {"detail": "Portal access revoked"}

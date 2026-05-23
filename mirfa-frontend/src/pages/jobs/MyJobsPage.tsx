@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { jobsApi, authApi } from '@/api/services'
-import { Card, CardHeader, Table, Th, Td, StatusBadge, PageHeader, PageLoader, EmptyState } from '@/components/ui'
+import { Card, CardHeader, Table, Th, Td, StatusBadge, PageHeader, PageLoader, EmptyState, Button } from '@/components/ui'
 import { formatDate, formatCurrency } from '@/lib/utils'
 import type { AxiosResponse } from 'axios'
 
@@ -34,6 +34,16 @@ export default function MyJobsPage() {
         title="My Jobs"
         subtitle={`Welcome, ${me.full_name} — ${jobs?.total ?? 0} job(s) assigned to you`}
       />
+      {me?.role === 'driver' && (
+  <div className="bg-sky-50 border border-sky-200 rounded-lg px-4 py-3 flex items-center justify-between">
+    <p className="text-sm text-sky-700">
+      Need to change your password? Go to <strong>Settings → Password</strong>
+    </p>
+    <Button size="sm" variant="outline" onClick={() => navigate('/settings')}>
+      Go to Settings
+    </Button>
+  </div>
+)}
 
       <Card>
         {!jobs?.results?.length ? (
