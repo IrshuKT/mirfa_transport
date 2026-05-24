@@ -2,8 +2,8 @@ import { useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
-import { ArrowLeft, Save } from 'lucide-react'
-import { jobsApi, customersApi } from '@/api/services'
+import { ArrowLeft, CheckCircle, Save,FileText } from 'lucide-react'
+import { jobsApi, customersApi, getApiError, invoicesApi } from '@/api/services'
 import {
   Button, Card, CardBody, CardHeader,
   Input, PageHeader, PageLoader, Badge, StatusBadge,
@@ -112,6 +112,16 @@ export default function JobFormPage() {
       }
     },
   })
+
+  const invoiceMutation = useMutation({
+  mutationFn: () => invoicesApi.fromJob(Number(id)),
+  onSuccess: (res: any) => {
+    qc.invalidateQueries({ queryKey: ['job', id] })
+    toast.success(`Invoice ${res.data.invoice_no} created!`)
+    navigate('/invoices')
+  },
+  onError: (e: any) => toast.error(getApiError(e)),
+})
 
   const statusMutation = useMutation({
     mutationFn: (status: string) => jobsApi.updateStatus(Number(id), status),
@@ -328,6 +338,48 @@ export default function JobFormPage() {
             {isEdit ? 'Save Changes' : 'Create Job'}
           </Button>
         </div>
+        {/* Invoice */}
+       {isEdit && job?.status === 'completed' && !job?.is_invoiced && (
+  <Card>
+    <CardHeader>
+      <h3 className="font-semibold text-slate-800">Invoice</h3>
+    </CardHeader>
+    <CardBody>
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm text-slate-700">Job completed — ready to invoice</p>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Creates invoice for {job.currency} {job.agreed_amount} with 5% VAT
+          </p>
+        </div>
+        <Button
+          icon={<FileText size={15} />}
+          loading={invoiceMutation.isPending}
+          onClick={() => {
+            if (confirm('Create invoice from this job?')) invoiceMutation.mutate()
+          }}
+        >
+          Create Invoice
+        </Button>
+      </div>
+    </CardBody>
+  </Card>
+)}
+
+{isEdit && job?.is_invoiced && (
+  <Card>
+    <CardBody>
+      <div className="flex items-center gap-2 text-green-600">
+        <CheckCircle size={16} />
+        <span className="text-sm font-medium">Invoice created for this job</span>
+        <Button size="sm" variant="ghost" onClick={() => navigate('/invoices')}>
+          View Invoice →
+        </Button>
+      </div>
+    </CardBody>
+  </Card>
+)}
+
 
       </form>
     </div>

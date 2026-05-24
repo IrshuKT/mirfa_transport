@@ -522,3 +522,4 @@ async def track_job(token: str, db: DB):
         "driver_location": driver_location,
         "dispatch_status": active_dispatch.status if active_dispatch else None,
     }
+

@@ -111,6 +111,65 @@ async def aging_report(db: DB, current_user: CurrentUser):
             buckets["over_90"] += bal
     return {k: round(v, 2) for k, v in buckets.items()}
 
+# Create invoice directly from a completed job
+@router.post("/from-job/{job_id}", status_code=status.HTTP_201_CREATED)
+async def create_invoice_from_job(
+    job_id: int,
+    db: DB,
+    current_user: CurrentUser,
+):
+    from app.models.job import Job
+    from datetime import timedelta
+
+    # Get the job
+    result = await db.execute(
+        select(Job).where(
+            Job.id == job_id,
+            Job.company_id == current_user.company_id,
+        )
+    )
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.is_invoiced:
+        raise HTTPException(status_code=400, detail="Job already invoiced")
+    if not job.agreed_amount:
+        raise HTTPException(status_code=400, detail="Job has no agreed amount")
+
+    # Get customer's credit days for due date
+    from app.models.entities import Customer
+    customer = await db.get(Customer, job.customer_id)
+    credit_days = customer.credit_days if customer else 30
+
+    today = date.today()
+    invoice = await create_invoice(
+        db=db,
+        company_id=current_user.company_id,
+        created_by_id=current_user.id,
+        customer_id=job.customer_id,
+        job_id=job.id,
+        invoice_date=today,
+        due_date=today + timedelta(days=credit_days),
+        customer_trn=customer.trn if customer else None,
+        currency=job.currency or "AED",
+        line_items=[{
+            "description": f"Transportation Service — Job {job.job_no}\n{job.pickup_address} → {job.delivery_address}",
+            "quantity": 1,
+            "unit": "job",
+            "unit_price": float(job.agreed_amount),
+            "discount_pct": 0,
+            "vat_pct": 5,
+            "sort_order": 0,
+        }],
+    )
+
+    # Mark job as invoiced
+    job.is_invoiced = True
+    await db.commit()
+    await post_invoice_journal(db, invoice, current_user.id)
+
+    return _fmt(invoice)
+
 
 @router.get("/{invoice_id}")
 async def get_invoice(invoice_id: int, db: DB, current_user: CurrentUser):

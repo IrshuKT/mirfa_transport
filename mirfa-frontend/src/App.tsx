@@ -26,6 +26,7 @@ import CustomerFormPage from '@/pages/customers/CustomerFormPage'
 import JobFormPage from '@/pages/jobs/JobFormPage'
 import { JobDetailPage } from './pages/jobs/JobDetailPage'
 import MyJobsPage from '@/pages/jobs/MyJobsPage'
+import InvoiceDetailPage from '@/pages/accounting/InvoiceDetailPage'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000, refetchOnWindowFocus: false } },
@@ -69,6 +70,7 @@ export default function App() {
             <Route path="/drivers"    element={<DriversPage />} />
             <Route path="/documents"  element={<DocumentsPage />} />
             <Route path="/accounting/invoices" element={<InvoicesPage />} />
+            <Route path="/invoices/:id" element={<InvoiceDetailPage />} />
             <Route path="/accounting/receipts" element={<ReceiptsPage />} />
             <Route path="/accounting/payments" element={<PaymentsPage />} />
             <Route path="/accounting/journals" element={<JournalsPage />} />

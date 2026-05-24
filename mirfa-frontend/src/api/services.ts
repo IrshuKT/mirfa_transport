@@ -147,9 +147,15 @@ export const invoicesApi = {
     api.get<Paginated<Invoice>>('/accounting/invoices', { params }),
   get: (id: number) => api.get<Invoice>(`/accounting/invoices/${id}`),
   create: (data: any) => api.post<Invoice>('/accounting/invoices', data),
+  update: (id: number, data: any) => api.patch(`/accounting/invoices/${id}`, data),
   send: (id: number) => api.post(`/accounting/invoices/${id}/send`),
   cancel: (id: number) => api.post(`/accounting/invoices/${id}/cancel`),
   aging: () => api.get('/accounting/invoices/aging'),
+  fromJob: (jobId: number) =>
+    api.post(`/accounting/invoices/from-job/${jobId}`),
+  recordPayment: (id: number, data: any) =>
+    api.post(`/accounting/invoices/${id}/payment`, data),
+
 }
 
 export const receiptsApi = {

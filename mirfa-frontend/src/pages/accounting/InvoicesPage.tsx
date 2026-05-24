@@ -1,18 +1,31 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Send, XCircle, Trash2 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Plus, Send, XCircle, Eye } from 'lucide-react'
 import { invoicesApi, customersApi } from '@/api/services'
 import {
   Button, Card, CardHeader, Table, Th, Td,
   PageHeader, Modal, Input, Textarea, Select,
-  EmptyState, PageLoader, StatusBadge,
+  EmptyState, PageLoader, Badge,
 } from '@/components/ui'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { getApiError } from '@/api/services'
+import { Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
+
+const STATUS_COLORS: Record<string, string> = {
+  draft: 'bg-slate-100 text-slate-600',
+  sent: 'bg-blue-100 text-blue-700',
+  partially_paid: 'bg-amber-100 text-amber-700',
+  paid: 'bg-green-100 text-green-700',
+  overdue: 'bg-red-100 text-red-700',
+  cancelled: 'bg-red-50 text-red-400',
+}
 
 export default function InvoicesPage() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const [page, setPage] = useState(1)
   const [showCreate, setShowCreate] = useState(false)
   const [statusFilter, setStatusFilter] = useState('')
@@ -22,16 +35,25 @@ export default function InvoicesPage() {
     queryFn: () => invoicesApi.list({ page, page_size: 25, status: statusFilter || undefined }),
   })
 
+  // Fetch all customers for name lookup
+  const { data: customersData } = useQuery({
+    queryKey: ['customers', 'select'],
+    queryFn: () => customersApi.list({ page_size: 200 }),
+  })
+  const customerMap = Object.fromEntries(
+    (customersData?.data?.results || []).map((c: any) => [c.id, c.name])
+  )
+
   const sendMutation = useMutation({
     mutationFn: (id: number) => invoicesApi.send(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['invoices'] }); toast.success('Invoice sent') },
-    onError: () => toast.error('Failed to send invoice'),
+    onError: (e: any) => toast.error(getApiError(e)),
   })
 
   const cancelMutation = useMutation({
     mutationFn: (id: number) => invoicesApi.cancel(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['invoices'] }); toast.success('Invoice cancelled') },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed'),
+    onError: (e: any) => toast.error(getApiError(e)),
   })
 
   const invoices = data?.data
@@ -61,7 +83,7 @@ export default function InvoicesPage() {
             ]}
             placeholder="All statuses"
             value={statusFilter}
-            onChange={e => { setStatusFilter(e.target.value); setPage(1) }}
+            onChange={(e: any) => { setStatusFilter(e.target.value); setPage(1) }}
             className="w-44"
           />
         </CardHeader>
@@ -77,43 +99,55 @@ export default function InvoicesPage() {
                 <Th>Total</Th>
                 <Th>Balance</Th>
                 <Th>Status</Th>
-                <Th>Actions</Th>
+                <Th> </Th>
               </tr>
             </thead>
             <tbody>
-              {invoices?.results?.length === 0 ? (
+              {!invoices?.results?.length ? (
                 <tr><td colSpan={8}><EmptyState title="No invoices found" /></td></tr>
-              ) : (
-                invoices?.results?.map((inv: any) => (
-                  <tr key={inv.id} className="hover:bg-slate-50">
-                    <Td className="font-medium text-sky-700">{inv.invoice_no}</Td>
-                    <Td>{inv.customer_id}</Td>
-                    <Td className="text-xs">{formatDate(inv.invoice_date)}</Td>
-                    <Td className="text-xs">{formatDate(inv.due_date)}</Td>
-                    <Td className="font-medium">{formatCurrency(inv.total_amount)}</Td>
-                    <Td className={inv.balance_due > 0 ? 'font-medium text-red-600' : 'text-green-600'}>
-                      {formatCurrency(inv.balance_due)}
-                    </Td>
-                    <Td><StatusBadge status={inv.status} /></Td>
-                    <Td>
-                      <div className="flex gap-1">
-                        {inv.status === 'draft' && (
-                          <Button size="sm" variant="outline" icon={<Send size={12} />}
-                            loading={sendMutation.isPending}
-                            onClick={() => sendMutation.mutate(inv.id)}
-                          >Send</Button>
-                        )}
-                        {!['paid', 'cancelled'].includes(inv.status) && (
-                          <Button size="sm" variant="ghost" icon={<XCircle size={12} />}
-                            loading={cancelMutation.isPending}
-                            onClick={() => { if (confirm('Cancel this invoice?')) cancelMutation.mutate(inv.id) }}
-                          >Cancel</Button>
-                        )}
-                      </div>
-                    </Td>
-                  </tr>
-                ))
-              )}
+              ) : invoices.results.map((inv: any) => (
+                <tr key={inv.id} className="hover:bg-slate-50 cursor-pointer"
+                  onClick={() => navigate(`/invoices/${inv.id}`)}>
+                  <Td className="font-medium text-sky-700">{inv.invoice_no}</Td>
+                  <Td className="font-medium text-slate-800">
+                    {customerMap[inv.customer_id] || `#${inv.customer_id}`}
+                  </Td>
+                  <Td className="text-xs">{formatDate(inv.invoice_date)}</Td>
+                  <Td className="text-xs">{formatDate(inv.due_date)}</Td>
+                  <Td className="font-medium">{formatCurrency(inv.total_amount)}</Td>
+                  <Td className={inv.balance_due > 0 ? 'font-medium text-red-600' : 'text-green-600'}>
+                    {formatCurrency(inv.balance_due)}
+                  </Td>
+                  <Td>
+                    <Badge className={STATUS_COLORS[inv.status] || 'bg-slate-100 text-slate-600'}>
+                      {inv.status.replace(/_/g, ' ')}
+                    </Badge>
+                  </Td>
+                  <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                    <div className="flex gap-1">
+                      <Button size="sm" variant="ghost" icon={<Eye size={13} />}
+                        onClick={() => navigate(`/invoices/${inv.id}`)}>
+                        View
+                      </Button>
+                      {inv.status === 'draft' && (
+                        <Button size="sm" variant="outline" icon={<Send size={12} />}
+                          loading={sendMutation.isPending}
+                          onClick={() => sendMutation.mutate(inv.id)}>
+                          Send
+                        </Button>
+                      )}
+                      {!['paid', 'cancelled'].includes(inv.status) && (
+                        <Button size="sm" variant="ghost" icon={<XCircle size={12} />}
+                          loading={cancelMutation.isPending}
+                          onClick={() => { if (confirm('Cancel this invoice?')) cancelMutation.mutate(inv.id) }}
+                          className="text-red-400 hover:text-red-600 hover:bg-red-50">
+                          Cancel
+                        </Button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </Table>
         )}
@@ -134,6 +168,7 @@ export default function InvoicesPage() {
   )
 }
 
+// ── Create Invoice Modal ──────────────────────────────────────────────────────
 function CreateInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient()
   const { register, handleSubmit, control, watch, reset } = useForm<any>({
@@ -146,8 +181,10 @@ function CreateInvoiceModal({ open, onClose }: { open: boolean; onClose: () => v
   const { fields, append, remove } = useFieldArray({ control, name: 'line_items' })
   const lineItems = watch('line_items') || []
 
-  const subtotal = lineItems.reduce((s: number, li: any) => s + (li.quantity || 0) * (li.unit_price || 0), 0)
-  const vat = lineItems.reduce((s: number, li: any) => s + (li.quantity || 0) * (li.unit_price || 0) * (1 - (li.discount_pct || 0) / 100) * ((li.vat_pct || 5) / 100), 0)
+  const subtotal = lineItems.reduce((s: number, li: any) =>
+    s + (li.quantity || 0) * (li.unit_price || 0), 0)
+  const vat = lineItems.reduce((s: number, li: any) =>
+    s + (li.quantity || 0) * (li.unit_price || 0) * (1 - (li.discount_pct || 0) / 100) * ((li.vat_pct || 5) / 100), 0)
 
   const { data: customers } = useQuery({
     queryKey: ['customers', 'select'],
@@ -159,11 +196,11 @@ function CreateInvoiceModal({ open, onClose }: { open: boolean; onClose: () => v
     mutationFn: (data: any) => invoicesApi.create(data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['invoices'] })
-      toast.success('Invoice created and journal posted')
+      toast.success('Invoice created!')
       reset()
       onClose()
     },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed'),
+    onError: (e: any) => toast.error(getApiError(e)),
   })
 
   return (
@@ -179,6 +216,7 @@ function CreateInvoiceModal({ open, onClose }: { open: boolean; onClose: () => v
           <Input label="Invoice Date *" type="date" {...register('invoice_date', { required: true })} />
           <Input label="Due Date *" type="date" {...register('due_date', { required: true })} />
         </div>
+
         <Input label="Customer TRN" placeholder="UAE Tax Registration No" {...register('customer_trn')} />
 
         {/* Line Items */}
@@ -206,16 +244,42 @@ function CreateInvoiceModal({ open, onClose }: { open: boolean; onClose: () => v
               <tbody>
                 {fields.map((field, i) => {
                   const li = lineItems[i] || {}
-                  const t = (li.quantity || 0) * (li.unit_price || 0) * (1 - (li.discount_pct || 0) / 100) * (1 + (li.vat_pct || 5) / 100)
+                  const t = (li.quantity || 0) * (li.unit_price || 0)
+                    * (1 - (li.discount_pct || 0) / 100)
+                    * (1 + (li.vat_pct || 5) / 100)
                   return (
                     <tr key={field.id} className="border-t border-slate-100">
-                      <td className="px-2 py-1.5"><input className="w-full text-xs border-0 outline-none" placeholder="Description" {...register(`line_items.${i}.description`)} /></td>
-                      <td className="px-2 py-1.5"><input type="number" className="w-16 text-xs border-0 outline-none" {...register(`line_items.${i}.quantity`, { valueAsNumber: true })} /></td>
-                      <td className="px-2 py-1.5"><input type="number" step="0.01" className="w-24 text-xs border-0 outline-none" {...register(`line_items.${i}.unit_price`, { valueAsNumber: true })} /></td>
-                      <td className="px-2 py-1.5"><input type="number" className="w-14 text-xs border-0 outline-none" {...register(`line_items.${i}.discount_pct`, { valueAsNumber: true })} /></td>
-                      <td className="px-2 py-1.5"><input type="number" className="w-14 text-xs border-0 outline-none" {...register(`line_items.${i}.vat_pct`, { valueAsNumber: true })} /></td>
-                      <td className="px-2 py-1.5 font-medium text-slate-700">{isNaN(t) ? '—' : formatCurrency(t)}</td>
-                      <td className="px-1">{fields.length > 1 && <button type="button" onClick={() => remove(i)} className="text-red-400 hover:text-red-600"><Trash2 size={12} /></button>}</td>
+                      <td className="px-2 py-1.5">
+                        <input className="w-full text-xs border-0 outline-none"
+                          placeholder="Description"
+                          {...register(`line_items.${i}.description`)} />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input type="number" className="w-16 text-xs border-0 outline-none"
+                          {...register(`line_items.${i}.quantity`, { valueAsNumber: true })} />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input type="number" step="0.01" className="w-24 text-xs border-0 outline-none"
+                          {...register(`line_items.${i}.unit_price`, { valueAsNumber: true })} />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input type="number" className="w-14 text-xs border-0 outline-none"
+                          {...register(`line_items.${i}.discount_pct`, { valueAsNumber: true })} />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input type="number" className="w-14 text-xs border-0 outline-none"
+                          {...register(`line_items.${i}.vat_pct`, { valueAsNumber: true })} />
+                      </td>
+                      <td className="px-2 py-1.5 font-medium text-slate-700">
+                        {isNaN(t) ? '—' : formatCurrency(t)}
+                      </td>
+                      <td className="px-1">
+                        {fields.length > 1 && (
+                          <button type="button" onClick={() => remove(i)} className="text-red-400 hover:text-red-600">
+                            <Trash2 size={12} />
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   )
                 })}
@@ -226,7 +290,7 @@ function CreateInvoiceModal({ open, onClose }: { open: boolean; onClose: () => v
                   <td className="px-2 text-xs font-medium">{formatCurrency(subtotal)}</td><td />
                 </tr>
                 <tr>
-                  <td colSpan={5} className="px-3 py-1 text-xs text-right text-slate-500">VAT (5%)</td>
+                  <td colSpan={5} className="px-3 py-1 text-xs text-right text-slate-500">VAT</td>
                   <td className="px-2 text-xs font-medium">{formatCurrency(vat)}</td><td />
                 </tr>
                 <tr>
@@ -256,4 +320,3 @@ function CreateInvoiceModal({ open, onClose }: { open: boolean; onClose: () => v
     </Modal>
   )
 }
-
