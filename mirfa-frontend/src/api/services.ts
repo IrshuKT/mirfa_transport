@@ -63,17 +63,15 @@ export const jobsApi = {
   update: (id: number, data: any) => api.patch<Job>(`/jobs/${id}`, data),
   updateStatus: (id: number, status: string) =>
     api.patch(`/jobs/${id}/status`, null, { params: { new_status: status } }),
-  dispatch: (id: number, data: { driver_id: number; vehicle_id?: number }) =>
-    api.post(`/jobs/${id}/dispatch`, data),
   track: (token: string) => api.get(`/jobs/track/${token}`),
   locationPing: (data: any) => api.post('/jobs/location/ping', data),
-  assignDriver: (id: number, driver_id: number) =>
-    api.patch(`/jobs/${id}`, { driver_id }),
   getDocuments:   (id: number) => api.get(`/jobs/${id}/documents`),
-  uploadDocument: (id: number, formData: FormData) =>
-    api.post(`/jobs/${id}/documents`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    }),
+  uploadDocument: (id: number, formData: FormData, docType = 'BOL', notes = '') =>
+  api.post(
+    `/jobs/${id}/documents?doc_type=${docType}${notes ? `&notes=${encodeURIComponent(notes)}` : ''}`,
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } }
+  ),
 
 }
 
@@ -151,8 +149,8 @@ export const invoicesApi = {
   send: (id: number) => api.post(`/accounting/invoices/${id}/send`),
   cancel: (id: number) => api.post(`/accounting/invoices/${id}/cancel`),
   aging: () => api.get('/accounting/invoices/aging'),
-  fromJob: (jobId: number) =>
-    api.post(`/accounting/invoices/from-job/${jobId}`),
+  fromJob: (jobId: number, description?: string) =>
+  api.post(`/accounting/invoices/from-job/${jobId}`, { description }),
   recordPayment: (id: number, data: any) =>
     api.post(`/accounting/invoices/${id}/payment`, data),
 

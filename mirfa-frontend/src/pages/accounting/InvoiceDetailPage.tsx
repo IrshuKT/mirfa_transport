@@ -1,12 +1,13 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useRef, useEffect } from 'react'
-import { ArrowLeft, Send, XCircle, Printer, CheckCircle, Plus } from 'lucide-react'
+import { ArrowLeft, Send, XCircle, Printer, CheckCircle, Plus,Edit2 } from 'lucide-react'
 import { invoicesApi, customersApi, receiptsApi, companiesApi } from '@/api/services'
 import { Button, Card, CardBody, CardHeader, PageLoader, Badge } from '@/components/ui'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { getApiError } from '@/api/services'
 import toast from 'react-hot-toast'
+
 
 const STATUS_COLORS: Record<string, string> = {
     draft: 'bg-slate-100 text-slate-600',
@@ -26,7 +27,7 @@ export default function InvoiceDetailPage() {
     const [showPayment, setShowPayment] = useState(false)
     const [editingNotes, setEditingNotes] = useState(false)
     const [notes, setNotes] = useState('')
-
+    const [showEdit, setShowEdit] = useState(false)
     const { data: inv, isLoading } = useQuery({
         queryKey: ['invoice', id],
         queryFn: () => invoicesApi.get(Number(id)),
@@ -216,6 +217,12 @@ th:last-child, td:last-child { text-align: right; }
                             Send
                         </Button>
                     )}
+                    {inv.status === 'draft' && (
+  <Button size="sm" variant="outline" icon={<Edit2 size={14} />}
+    onClick={() => setShowEdit(true)}>
+    Edit
+  </Button>
+)}
                     {!['paid', 'cancelled'].includes(inv.status) && (
                         <Button size="sm" variant="outline" icon={<XCircle size={14} />}
                             loading={cancelMutation.isPending}
@@ -439,6 +446,7 @@ th:last-child, td:last-child { text-align: right; }
                     }}
                 />
             )}
+            
         </div>
     )
 }

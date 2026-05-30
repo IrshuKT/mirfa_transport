@@ -118,6 +118,8 @@ export interface Job {
   delivery_lng?: number
   scheduled_pickup_at?: string
   scheduled_delivery_at?: string
+  pickup_km?: number | null
+  delivery_km?: number | null
   actual_pickup_at?: string
   actual_delivery_at?: string
   agreed_amount?: number
@@ -128,6 +130,12 @@ export interface Job {
   created_at: string
   updated_at: string
   assigned_to_id?: number
+  assigned_to?:{
+    id: number
+    full_name: string 
+    email?: string
+    phone?: string
+  }
 }
 
 // ── Quotation ─────────────────────────────────────────────────────────────────

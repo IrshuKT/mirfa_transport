@@ -28,9 +28,9 @@ export default function CustomerFormPage() {
 
   // fetch existing customer if edit mode
   const { data: existing, isLoading } = useQuery({
-    queryKey: ['customer', id],
+    queryKey: ['customer', Number(id)],
     queryFn: () => customersApi.get(Number(id)),
-    enabled: isEdit,
+    enabled: !!id,
   })
   const customer = existing?.data
 
@@ -187,15 +187,7 @@ export default function CustomerFormPage() {
           </CardBody>
         </Card>
 
-        {/* Contacts — edit mode only */}
-        {isEdit && customer && (
-          <ContactsSection customerId={Number(id)} contacts={customer.contacts || []} />
-        )}
-
-        {/* Portal Access — edit mode only */}
-        {isEdit && customer && (
-          <PortalAccessCard customer={customer} />
-        )}
+       
 
         {/* Notes */}
         <Card>
@@ -221,6 +213,16 @@ export default function CustomerFormPage() {
         </div>
 
       </form>
+       {/* Contacts — edit mode only */}
+        {isEdit && customer && (
+          <ContactsSection customerId={Number(id)} />
+        )}
+
+        {/* Portal Access — edit mode only */}
+        {isEdit && customer && (
+          <PortalAccessCard customer={customer} />
+        )}
+
     </div>
   )
 }
@@ -336,9 +338,15 @@ function PortalAccessCard({ customer }: { customer: any }) {
 }
 
 // ── Contacts Section ──────────────────────────────────────────────────────────
-function ContactsSection({ customerId, contacts }: { customerId: number; contacts: any[] }) {
+function ContactsSection({ customerId }: { customerId: number }) {
+ const [showAdd, setShowAdd] = useState(false)
+  const { data } = useQuery({
+    queryKey: ['customer', customerId],
+    queryFn: () => customersApi.get(customerId),
+  })
+
+  const contacts = data?.data?.contacts || []
   const qc = useQueryClient()
-  const [showAdd, setShowAdd] = useState(false)
   const { register, handleSubmit, reset } = useForm<any>({
     defaultValues: { is_primary: false }
   })
@@ -346,7 +354,7 @@ function ContactsSection({ customerId, contacts }: { customerId: number; contact
   const addMutation = useMutation({
     mutationFn: (data: any) => customersApi.addContact(customerId, data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['customer', String(customerId)] })
+      qc.invalidateQueries({ queryKey: ['customer', customerId] })
       toast.success('Contact added!')
       reset()
       setShowAdd(false)
@@ -357,7 +365,7 @@ function ContactsSection({ customerId, contacts }: { customerId: number; contact
   const deleteMutation = useMutation({
     mutationFn: (contactId: number) => customersApi.deleteContact(customerId, contactId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['customer', String(customerId)] })
+      qc.invalidateQueries({ queryKey: ['customer', customerId] })
       toast.success('Contact removed')
     },
     onError: (e: any) => toast.error(getApiError(e)),
@@ -368,7 +376,11 @@ function ContactsSection({ customerId, contacts }: { customerId: number; contact
       <CardHeader>
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-slate-800">Contacts</h3>
-          <Button size="sm" icon={<Plus size={14} />} onClick={() => setShowAdd(!showAdd)}>
+          <Button size="sm" icon={<Plus size={14} />} onClick={(e) => {
+  e.preventDefault()
+  e.stopPropagation()
+  setShowAdd(!showAdd)
+}}>
             Add Contact
           </Button>
         </div>
@@ -377,8 +389,12 @@ function ContactsSection({ customerId, contacts }: { customerId: number; contact
 
         {showAdd && (
           <form
-            onSubmit={handleSubmit((d) => addMutation.mutate(d))}
-            className="bg-slate-50 rounded-lg p-4 space-y-3 border border-slate-200"
+  onSubmit={(d) =>{
+    d.preventDefault ()
+    d.stopPropagation()
+     handleSubmit((e) => addMutation.mutate(e))(d)}}
+    className="bg-slate-50 rounded-lg p-4 space-y-3 border border-slate-200 block"
+
           >
             <div className="grid grid-cols-2 gap-3">
               <Input label="Name *" {...register('name', { required: true })} />

@@ -88,6 +88,17 @@ async def list_customers(
     customers = result.scalars().all()
     return paginate(total, page, page_size, [_fmt(c) for c in customers])
 
+@router.get("/next-code")
+async def next_customer_code(db: DB):
+    result = await db.execute(
+        select(func.count()).select_from(Customer)
+    )
+    count = result.scalar() or 0
+
+    return {
+        "code": f"MRTC-{str(count + 1).zfill(2)}"
+    }
+
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_customer(
@@ -223,12 +234,9 @@ async def create_portal_user(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     
-@router.get("/customers/next-code")
-def next_customer_code(db: Session = Depends(get_db)):
-    count = db.query(Customer).count()
-    return {"code": f"MRTC-{str(count + 1).zfill(2)}"}
 
-@router.delete("/customers/{customer_id}/portal")
+
+@router.delete("/{customer_id}/portal")
 def revoke_customer_portal(customer_id: int, db: Session = Depends(get_db)):
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer or not customer.portal_user_id:

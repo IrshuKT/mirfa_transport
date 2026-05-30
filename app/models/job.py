@@ -4,13 +4,14 @@ Job lifecycle: ServiceRequest → Job → Dispatch → POD
 import enum
 from typing import List, Optional
 from sqlalchemy import (
-    Boolean, DateTime, Enum, ForeignKey, Integer,
+    Boolean, Column, DateTime, Enum, ForeignKey, Integer,
     Numeric, String, Text, JSON
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
 
 from app.core.database import Base
+from app.models.entities import CustomerContact
 
 
 class RequestStatus(str, enum.Enum):
@@ -25,6 +26,8 @@ class JobStatus(str, enum.Enum):
     PENDING = "pending"
     ASSIGNED = "assigned"
     IN_PROGRESS = "in_progress"
+    PICKED_UP = "picked_up"
+    DELIVERED = "delivered"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
     ON_HOLD = "on_hold"
@@ -125,6 +128,8 @@ class Job(Base):
     scheduled_delivery_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     actual_pickup_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     actual_delivery_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    pickup_km = Column(Numeric(10, 2), nullable=True)
+    delivery_km = Column(Numeric(10, 2), nullable=True)
 
     # Billing
     agreed_amount: Mapped[Optional[float]] = mapped_column(Numeric(15, 2))
@@ -144,8 +149,10 @@ class Job(Base):
     location_pings: Mapped[List["DriverLocationPing"]] = relationship(
         "DriverLocationPing", back_populates="job"
     )
-    # In models/job.py — add to Job class
+
     assigned_to_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    contact_id: Mapped[Optional[int]] = mapped_column(ForeignKey("customer_contacts.id"), nullable=True)
+    contact: Mapped[Optional["CustomerContact"]] = relationship("CustomerContact", lazy="joined")
 
 # ── Dispatch ─────────────────────────────────────────────────────────────────
 

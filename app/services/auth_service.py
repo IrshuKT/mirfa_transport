@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import HTTPException, Request, status
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -33,14 +33,16 @@ async def login(
     result = await db.execute(
         select(User)
         .options(selectinload(User.role))
-        .where(User.email == payload.email)
+        .where(
+            or_(User.email == payload.email, User.phone == payload.email)
+        )
     )
     user: Optional[User] = result.scalar_one_or_none()
 
     if not user or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+            detail="Invalid email/mobile or password",
         )
 
     if user.status == UserStatus.PENDING:

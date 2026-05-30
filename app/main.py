@@ -15,6 +15,7 @@ from app.routers.accounting import coa, banks, invoices, reports
 from app.routers.accounting.receipts import receipts_router, payments_router, journals_router
 import os
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if settings.APP_ENV == "development":
@@ -31,9 +32,8 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
     lifespan=lifespan,
 )
-os.makedirs("media", exist_ok=True)
 
-app.mount("/media", StaticFiles(directory="media"), name="media")
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -42,6 +42,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.mount("/media", StaticFiles(directory="media"), name="media")
+
 
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(request: Request, exc: RequestValidationError):
@@ -76,6 +78,9 @@ app.include_router(receipts_router,    prefix=P)
 app.include_router(payments_router,    prefix=P)
 app.include_router(journals_router,    prefix=P)
 app.include_router(reports.router,     prefix=P)
+
+
+app.mount("/media", StaticFiles(directory="media"), name="media")
 
 @app.get("/", tags=["Health"])
 async def root():

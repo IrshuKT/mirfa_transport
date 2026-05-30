@@ -7,7 +7,7 @@ import re
 # ── Login / Token ─────────────────────────────────────────────────────────────
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str
     password: str
     totp_code: Optional[str] = None        # required if user has 2FA enabled
 

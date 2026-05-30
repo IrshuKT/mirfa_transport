@@ -7,7 +7,7 @@ import {
   Card, CardHeader, PageHeader, Badge, Button, PageLoader
 } from '@/components/ui'
 import toast from 'react-hot-toast'
-import type { Job } from '@/types'
+import type { Job, User } from '@/types'
 import type { AxiosResponse } from 'axios'
 
 interface JobDocument {
@@ -21,7 +21,6 @@ interface JobDocument {
   uploaded_by_id: number
 }
 
-// ── helpers ───────────────────────────────────────────────────────────────────
 function splitDatetime(iso?: string | null): { date: string; time: string } {
   if (!iso) return { date: '', time: '' }
   const d = new Date(iso)
@@ -43,21 +42,16 @@ export function JobDetailPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null)
-
-  // ── Split pickup date/time ─────────────────────────────────────────────────
-  const [pickupDate, setPickupDate]       = useState('')
-  const [pickupTime, setPickupTime]       = useState('')
-  const [deliveryDate, setDeliveryDate]   = useState('')
-  const [deliveryTime, setDeliveryTime]   = useState('')
+  const [pickupDate, setPickupDate]         = useState('')
+  const [pickupTime, setPickupTime]         = useState('')
+  const [deliveryDate, setDeliveryDate]     = useState('')
+  const [deliveryTime, setDeliveryTime]     = useState('')
   const [savingSchedule, setSavingSchedule] = useState(false)
+  const [docType, setDocType]               = useState('BOL')
+  const [docNotes, setDocNotes]             = useState('')
+  const [uploadingDoc, setUploadingDoc]     = useState(false)
+  const [selectedFiles, setSelectedFiles]   = useState<File[]>([])
 
-  // ── Document state ────────────────────────────────────────────────────────
-  const [docType, setDocType]             = useState('BOL')
-  const [docNotes, setDocNotes]           = useState('')
-  const [uploadingDoc, setUploadingDoc]   = useState(false)
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([])
-
-  // ── Queries ───────────────────────────────────────────────────────────────
   const { data: job, isLoading: jobLoading } = useQuery({
     queryKey: ['job', id],
     queryFn: () => jobsApi.get(Number(id)),
@@ -67,13 +61,11 @@ export function JobDetailPage() {
   useEffect(() => {
     if (job?.scheduled_pickup_at) {
       const { date, time } = splitDatetime(job.scheduled_pickup_at)
-      setPickupDate(date)
-      setPickupTime(time)
+      setPickupDate(date); setPickupTime(time)
     }
     if (job?.scheduled_delivery_at) {
       const { date, time } = splitDatetime(job.scheduled_delivery_at)
-      setDeliveryDate(date)
-      setDeliveryTime(time)
+      setDeliveryDate(date); setDeliveryTime(time)
     }
   }, [job])
 
@@ -89,9 +81,8 @@ export function JobDetailPage() {
     select: (res: AxiosResponse<JobDocument[]>) => res.data,
   })
 
-  // ── Mutations ─────────────────────────────────────────────────────────────
   const assignMutation = useMutation({
-    mutationFn: () => jobsApi.update(Number(id), { assigned_to_id: selectedUserId }),
+    mutationFn: () => jobsApi.update(Number(id), { assigned_to_id: selectedUserId, status: 'assigned' }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['job', id] })
       toast.success('Job assigned successfully')
@@ -100,7 +91,6 @@ export function JobDetailPage() {
     onError: () => toast.error('Failed to assign'),
   })
 
-  // ── Handlers ──────────────────────────────────────────────────────────────
   async function saveSchedule() {
     setSavingSchedule(true)
     try {
@@ -108,8 +98,6 @@ export function JobDetailPage() {
         scheduled_pickup_at:   combineDatetime(pickupDate, pickupTime),
         scheduled_delivery_at: combineDatetime(deliveryDate, deliveryTime),
       }
-
-      // Auto-advance status to in_progress when schedule is set
       if (
         (pickupDate || deliveryDate) &&
         job?.status !== 'in_progress' &&
@@ -118,14 +106,9 @@ export function JobDetailPage() {
       ) {
         updates.status = 'in_progress'
       }
-
       await jobsApi.update(Number(id), updates)
       qc.invalidateQueries({ queryKey: ['job', id] })
-      toast.success(
-        updates.status === 'in_progress'
-          ? 'Schedule saved · Status set to In Progress'
-          : 'Schedule saved'
-      )
+      toast.success(updates.status === 'in_progress' ? 'Schedule saved · Status set to In Progress' : 'Schedule saved')
     } catch {
       toast.error('Failed to save schedule')
     } finally {
@@ -146,8 +129,7 @@ export function JobDetailPage() {
       }
       qc.invalidateQueries({ queryKey: ['job-documents', id] })
       toast.success(`${selectedFiles.length} document(s) uploaded`)
-      setSelectedFiles([])
-      setDocNotes('')
+      setSelectedFiles([]); setDocNotes('')
       if (fileInputRef.current) fileInputRef.current.value = ''
     } catch {
       toast.error('Upload failed')
@@ -156,80 +138,88 @@ export function JobDetailPage() {
     }
   }
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setSelectedFiles(Array.from(e.target.files ?? []))
-  }
-
-  function removeFile(index: number) {
-    setSelectedFiles(prev => prev.filter((_, i) => i !== index))
-  }
-
   if (jobLoading) return <PageLoader />
 
-  const isAssigned = job?.status !== 'pending'
+  const isAssigned = !!job?.assigned_to_id
+  const assignedUser = users.find((u: User) => u.id === job?.assigned_to_id)
 
   return (
     <div className="space-y-5">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="text-sm text-slate-500 hover:text-slate-700">
-          ← Back
-        </button>
+        <button onClick={() => navigate(-1)} className="text-sm text-slate-500 hover:text-slate-700">← Back</button>
         <PageHeader title={job?.job_no} subtitle="Job details" />
       </div>
 
       {/* Job Info */}
       <Card>
         <div className="p-5 grid grid-cols-2 sm:grid-cols-3 gap-5">
-          <Detail label="Job No."  value={job?.job_no} />
-          <Detail label="Pickup"   value={job?.pickup_address} />
-          <Detail label="Delivery" value={job?.delivery_address} />
-          <Detail label="Scheduled Pickup" value={
-            job?.scheduled_pickup_at
-              ? new Date(job.scheduled_pickup_at).toLocaleString('en-AE')
-              : '—'
-          } />
-          <Detail label="Scheduled Delivery" value={
-            job?.scheduled_delivery_at
-              ? new Date(job.scheduled_delivery_at).toLocaleString('en-AE')
-              : '—'
-          } />
-          <Detail label="Amount"   value={job?.agreed_amount ? `${job.currency} ${job.agreed_amount}` : '—'} />
-          <Detail label="Status"   value={<Badge className={statusColor(job?.status)}>{job?.status}</Badge>} />
-          <Detail label="Priority" value={job?.priority ?? '—'} />
+          <Detail label="Job No."   value={job?.job_no} />
+          <Detail label="Pickup"    value={job?.pickup_address} />
+          <Detail label="Delivery"  value={job?.delivery_address} />
+          <Detail label="Scheduled Pickup" value={job?.scheduled_pickup_at ? new Date(job.scheduled_pickup_at).toLocaleString('en-AE') : '—'} />
+          <Detail label="Scheduled Delivery" value={job?.scheduled_delivery_at ? new Date(job.scheduled_delivery_at).toLocaleString('en-AE') : '—'} />
+          <Detail label="Amount"    value={job?.agreed_amount ? `${job.currency} ${job.agreed_amount}` : '—'} />
+          <Detail label="Status"    value={<Badge className={statusColor(job?.status)}>{job?.status}</Badge>} />
+          <Detail label="Priority"  value={job?.priority ?? '—'} />
+          <Detail label="Assigned To" value={assignedUser?.full_name ?? '—'} />
         </div>
       </Card>
 
-      {/* Schedule — split date + time */}
+      {/* Driver Activity — actual times + km reported by driver */}
+      {(job?.actual_pickup_at || job?.actual_delivery_at) && (
+        <Card>
+          <CardHeader>
+            <h2 className="text-sm font-semibold text-slate-700">Driver Activity</h2>
+          </CardHeader>
+          <div className="p-5 grid grid-cols-2 sm:grid-cols-4 gap-5">
+            {job?.actual_pickup_at && (
+              <>
+                <Detail
+                  label="Actual Pickup"
+                  value={new Date(job.actual_pickup_at).toLocaleString('en-AE')}
+                />
+                <Detail
+                  label="Pickup KM"
+                  value={job?.pickup_km ? `${job.pickup_km} km` : '—'}
+                />
+              </>
+            )}
+            {job?.actual_delivery_at && (
+              <>
+                <Detail
+                  label="Actual Delivery"
+                  value={new Date(job.actual_delivery_at).toLocaleString('en-AE')}
+                />
+                <Detail
+                  label="Delivery KM"
+                  value={job?.delivery_km ? `${job.delivery_km} km` : '—'}
+                />
+              </>
+            )}
+          </div>
+        </Card>
+      )}
+
+      {/* Schedule */}
       <Card>
         <CardHeader>
           <h2 className="text-sm font-semibold text-slate-700">Schedule</h2>
         </CardHeader>
         <div className="p-5 space-y-4">
-
           {/* Pickup */}
           <div>
             <p className="text-xs text-slate-500 uppercase tracking-wide mb-2">Pickup</p>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-xs text-slate-500 mb-1 block">Date</label>
-                <input
-                  type="date"
-                  value={pickupDate}
-                  onChange={e => setPickupDate(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800
-                    focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <input type="date" value={pickupDate} onChange={e => setPickupDate(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div>
                 <label className="text-xs text-slate-500 mb-1 block">Time</label>
-                <input
-                  type="time"
-                  value={pickupTime}
-                  onChange={e => setPickupTime(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800
-                    focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <input type="time" value={pickupTime} onChange={e => setPickupTime(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
             </div>
           </div>
@@ -240,87 +230,68 @@ export function JobDetailPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-xs text-slate-500 mb-1 block">Date</label>
-                <input
-                  type="date"
-                  value={deliveryDate}
-                  onChange={e => setDeliveryDate(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800
-                    focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <input type="date" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div>
                 <label className="text-xs text-slate-500 mb-1 block">Time</label>
-                <input
-                  type="time"
-                  value={deliveryTime}
-                  onChange={e => setDeliveryTime(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800
-                    focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <input type="time" value={deliveryTime} onChange={e => setDeliveryTime(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
             </div>
           </div>
 
           <div className="flex justify-end pt-1">
-            <Button onClick={saveSchedule} loading={savingSchedule}>
-              Save Schedule
-            </Button>
+            <Button onClick={saveSchedule} loading={savingSchedule}>Save Schedule</Button>
           </div>
         </div>
       </Card>
 
       {/* Assign To */}
-      {!isAssigned && (
-        <Card>
-          <CardHeader>
-            <h2 className="text-sm font-semibold text-slate-700">Assign To</h2>
-          </CardHeader>
-          <div className="p-5">
-            {usersLoading ? (
-              <p className="text-sm text-slate-400">Loading users...</p>
-            ) : users.length === 0 ? (
-              <p className="text-sm text-slate-400">No users found.</p>
-            ) : (
-              <div className="space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {users.map((u: any) => (
-                    <button
-                      key={u.id}
-                      onClick={() => setSelectedUserId(u.id)}
-                      className={`flex items-center gap-3 p-3 rounded-lg border text-left transition-all
-                        ${selectedUserId === u.id
-                          ? 'border-blue-500 bg-blue-50'
-                          : 'border-slate-200 hover:border-slate-300 bg-white'
-                        }`}
-                    >
-                      <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center
-                        text-xs font-semibold text-slate-600">
-                        {u.full_name?.charAt(0)}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-slate-800">{u.full_name}</p>
-                        <p className="text-xs text-slate-400">{u.role?.name ?? u.email ?? ''}</p>
-                      </div>
-                      {selectedUserId === u.id && (
-                        <span className="ml-auto text-blue-500 text-xs font-semibold">Selected</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex justify-end pt-2">
-                  <Button
-                    onClick={() => assignMutation.mutate()}
-                    loading={assignMutation.isPending}
-                    disabled={!selectedUserId}
-                  >
-                    Confirm Assignment
-                  </Button>
-                </div>
+      <Card>
+        <CardHeader>
+          <h2 className="text-sm font-semibold text-slate-700">Assigned To</h2>
+        </CardHeader>
+        <div className="p-5">
+          {isAssigned && assignedUser ? (
+            <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
+              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-sm font-semibold text-blue-600">
+                {assignedUser.full_name.charAt(0).toUpperCase()}
               </div>
-            )}
-          </div>
-        </Card>
-      )}
+              <div className="flex-1">
+                <p className="text-sm font-medium text-slate-800">{assignedUser.full_name}</p>
+                <p className="text-xs text-slate-400">{assignedUser.email}</p>
+              </div>
+              <span className="text-xs font-semibold text-blue-600 bg-blue-100 px-2 py-1 rounded-md">Assigned</span>
+            </div>
+          ) : usersLoading ? (
+            <p className="text-sm text-slate-400">Loading users...</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {users.map((u: User) => (
+                  <button key={u.id} onClick={() => setSelectedUserId(u.id)}
+                    className={`flex items-center gap-3 p-3 rounded-lg border text-left transition-all ${selectedUserId === u.id ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-slate-300 bg-white'}`}>
+                    <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-semibold text-slate-600">
+                      {u.full_name?.charAt(0)}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-slate-800">{u.full_name}</p>
+                      <p className="text-xs text-slate-400">{u.email}</p>
+                    </div>
+                    {selectedUserId === u.id && <span className="ml-auto text-blue-500 text-xs font-semibold">Selected</span>}
+                  </button>
+                ))}
+              </div>
+              <div className="flex justify-end pt-2">
+                <Button onClick={() => assignMutation.mutate()} loading={assignMutation.isPending} disabled={!selectedUserId}>
+                  Confirm Assignment
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </Card>
 
       {/* Documents */}
       <Card>
@@ -332,53 +303,33 @@ export function JobDetailPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Document Type</label>
-                <select
-                  value={docType}
-                  onChange={e => setDocType(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800
-                    focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  {['BOL', 'CMR', 'POD', 'Permit', 'Invoice', 'Other'].map(t => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
+                <select value={docType} onChange={e => setDocType(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  {['BOL', 'CMR', 'POD', 'Permit', 'Invoice', 'Other'].map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
               <div>
                 <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Notes (optional)</label>
-                <input
-                  type="text"
-                  value={docNotes}
-                  onChange={e => setDocNotes(e.target.value)}
-                  placeholder="e.g. Signed copy"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800
-                    focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <input type="text" value={docNotes} onChange={e => setDocNotes(e.target.value)} placeholder="e.g. Signed copy"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
             </div>
 
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-slate-200 rounded-lg p-6 text-center
-                cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-all"
-            >
-              <p className="text-sm text-slate-500">
-                Click to select files <span className="text-slate-400">(multiple allowed)</span>
-              </p>
-              <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileChange} />
+            <div onClick={() => fileInputRef.current?.click()}
+              className="border-2 border-dashed border-slate-200 rounded-lg p-6 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-all">
+              <p className="text-sm text-slate-500">Click to select files <span className="text-slate-400">(multiple allowed)</span></p>
+              <input ref={fileInputRef} type="file" multiple className="hidden" onChange={e => setSelectedFiles(Array.from(e.target.files ?? []))} />
             </div>
 
             {selectedFiles.length > 0 && (
               <div className="space-y-2">
                 {selectedFiles.map((file, i) => (
-                  <div key={i} className="flex items-center justify-between bg-slate-50
-                    border border-slate-200 rounded-lg px-3 py-2">
+                  <div key={i} className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
                     <div>
                       <p className="text-sm font-medium text-slate-700">{file.name}</p>
                       <p className="text-xs text-slate-400">{formatBytes(file.size)}</p>
                     </div>
-                    <button onClick={() => removeFile(i)} className="text-xs text-red-400 hover:text-red-600">
-                      Remove
-                    </button>
+                    <button onClick={() => setSelectedFiles(prev => prev.filter((_, j) => j !== i))} className="text-xs text-red-400 hover:text-red-600">Remove</button>
                   </div>
                 ))}
                 <div className="flex justify-end">
@@ -401,15 +352,10 @@ export function JobDetailPage() {
                   <div>
                     <p className="text-sm font-medium text-slate-800">{doc.file_name}</p>
                     <p className="text-xs text-slate-400">
-                      {doc.doc_type}
-                      {doc.notes ? ` · ${doc.notes}` : ''}
-                      {doc.file_size_bytes ? ` · ${formatBytes(doc.file_size_bytes)}` : ''}
+                      {doc.doc_type}{doc.notes ? ` · ${doc.notes}` : ''}{doc.file_size_bytes ? ` · ${formatBytes(doc.file_size_bytes)}` : ''}
                     </p>
                   </div>
-                  <a href={doc.file_url} target="_blank" rel="noopener noreferrer"
-                    className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                    View
-                  </a>
+                  <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:text-blue-800 font-medium">View</a>
                 </div>
               ))}
             </div>
@@ -420,7 +366,6 @@ export function JobDetailPage() {
   )
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
 function Detail({ label, value }: { label: string; value: any }) {
   return (
     <div>

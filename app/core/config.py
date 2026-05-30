@@ -54,7 +54,10 @@ class Settings(BaseSettings):
     MAX_PAGE_SIZE: int = 200
 
     # CORS
-    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173"]
+    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173","capacitor://localhost",   
+    "http://localhost",  "http://192.168.29.226:5173","http://192.168.29.226:3000",   ]
+
+    base_url: str = "http://localhost:8000"
 
     @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod

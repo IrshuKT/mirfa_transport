@@ -346,7 +346,7 @@ function SuccessModal({ result, onClose }: { result: any; onClose: () => void })
 function MyCompanyProfile() {
   const { data, isLoading } = useQuery({
     queryKey: ['company', 'me'],
-    queryFn: () => companiesApi.getMyCompany(),
+    queryFn: () => companiesApi.getMe(),
   })
   const company = data?.data
   if (isLoading) return <PageLoader />

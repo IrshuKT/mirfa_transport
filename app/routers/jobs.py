@@ -16,6 +16,7 @@ from app.models.job import Dispatch, DispatchStatus, Job, JobStatus, ServiceRequ
 from app.models.entities import Customer
 import os, shutil
 from fastapi import File, UploadFile
+BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 DB = Annotated[AsyncSession, Depends(get_db)]
@@ -25,6 +26,7 @@ DB = Annotated[AsyncSession, Depends(get_db)]
 
 class JobCreate(BaseModel):
     customer_id: int
+    contact_id: Optional[int] = None
     pickup_address: str
     delivery_address: str
     pickup_lat: Optional[float] = None
@@ -40,6 +42,7 @@ class JobCreate(BaseModel):
     assigned_to_id: Optional[int] = None
 
 class JobUpdate(BaseModel):
+    contact_id: Optional[int] = None
     pickup_address: Optional[str] = None
     delivery_address: Optional[str] = None
     pickup_lat: Optional[float] = None
@@ -54,6 +57,10 @@ class JobUpdate(BaseModel):
     priority: Optional[str] = None
     customer_id: Optional[int] = None
     assigned_to_id: Optional[int] = None
+    pickup_km: Optional[float] = None
+    delivery_km: Optional[float] = None
+    actual_pickup_at: Optional[datetime] = None
+    actual_delivery_at: Optional[datetime] = None
 
 class JobDocumentOut(BaseModel):
     id: int
@@ -84,11 +91,16 @@ class LocationPing(BaseModel):
     heading: Optional[float] = None
     job_id: Optional[int] = None
 
+class FromJobPayload(BaseModel):
+    description: Optional[str] = None
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 async def _get_or_404(job_id: int, db: AsyncSession) -> Job:
-    result = await db.execute(select(Job).where(Job.id == job_id))
+    result = await db.execute(select(Job)
+                              .options(selectinload(Job.contact))
+                              .where(Job.id == job_id))
     job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -121,6 +133,8 @@ def _job_dict(job: Job) -> dict:
         "scheduled_delivery_at": job.scheduled_delivery_at,
         "actual_pickup_at": job.actual_pickup_at,
         "actual_delivery_at": job.actual_delivery_at,
+        "pickup_km": float(job.pickup_km) if job.pickup_km else None,
+        "delivery_km": float(job.delivery_km) if job.delivery_km else None,
         "agreed_amount": float(job.agreed_amount) if job.agreed_amount else None,
         "currency": job.currency,
         "is_invoiced": job.is_invoiced,
@@ -129,6 +143,9 @@ def _job_dict(job: Job) -> dict:
         "created_at": job.created_at,
         "updated_at": job.updated_at,
         "assigned_to_id": job.assigned_to_id,
+        "customer_id": job.customer_id,
+        "contact_id": job.contact_id,    
+
     }
 
 
@@ -160,16 +177,15 @@ async def list_jobs(
     elif current_user.role.name == "driver":
         q = (
             select(Job)
-            .join(Dispatch, Dispatch.job_id == Job.id)
             .where(
                 Job.company_id == current_user.company_id,
-                Dispatch.driver_id == current_user.id,
+                Job.assigned_to_id == current_user.id,
             )
         )
 
     # ── Optional filters (apply after role scoping) ───────────────────────────
     if assigned_to_id:
-        q = q.where(Job.assigned_to_id == assigned_to_id)
+        q = q.filter(Job.assigned_to_id == assigned_to_id)
     if status_filter:
         q = q.where(Job.status == status_filter)
     if customer_id and current_user.role.name != "customer_portal":
@@ -302,7 +318,12 @@ async def upload_job_document(
 
     upload_dir = f"media/jobs/{job_id}"
     os.makedirs(upload_dir, exist_ok=True)
-    file_path = f"{upload_dir}/{file.filename}"
+
+    ext = os.path.splitext(file.filename)[1]
+    custom_name = notes.strip() if notes else file.filename
+    safe_name = custom_name if custom_name.endswith(ext) else f"{custom_name}{ext}"
+    file_path = f"{upload_dir}/{safe_name}"
+
 
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
@@ -311,8 +332,8 @@ async def upload_job_document(
         job_id=job_id,
         uploaded_by_id=current_user.id,
         doc_type=doc_type,
-        file_name=file.filename,
-        file_url=f"/{file_path}",
+        file_name=safe_name,
+        file_url=f"{BASE_URL}/media/jobs/{job_id}/{safe_name}",
         file_size_bytes=file.size,
         mime_type=file.content_type,
         notes=notes,
@@ -344,7 +365,7 @@ async def update_job_status(
     job = await _get_or_404(job_id, db)
     _assert_company(current_user, job)
     try:
-        job.status = JobStatus(new_status)
+        job.status = JobStatus(new_status.lower())
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Invalid status: {new_status}")
     await db.commit()
@@ -394,7 +415,7 @@ async def update_dispatch_status(
         raise HTTPException(status_code=404, detail="Dispatch not found")
 
     try:
-        ds = DispatchStatus(new_status)
+        ds = DispatchStatus(new_status.lower())
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Invalid status: {new_status}")
 
@@ -523,3 +544,57 @@ async def track_job(token: str, db: DB):
         "dispatch_status": active_dispatch.status if active_dispatch else None,
     }
 
+@router.post("/from-job/{job_id}", response_model=dict)
+async def create_invoice_from_job(
+    job_id: int,
+    payload: FromJobPayload,        # ← was no body before
+    db: DB,
+    current_user: CurrentUser,
+):
+    job = await db.get(Job, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.is_invoiced:
+        raise HTTPException(status_code=400, detail="Job already invoiced")
+
+    subtotal = float(job.agreed_amount or 0)
+    vat_pct = 5.0
+    vat_amount = round(subtotal * vat_pct / 100, 2)
+    total = round(subtotal + vat_amount, 2)
+
+    # Use provided description or fall back to auto-generated
+    line_description = payload.description or (
+        f"Transport service — {job.pickup_address} → {job.delivery_address}"
+    )
+
+    from datetime import date, timedelta
+    today = date.today()
+
+    invoice = Invoice(
+        company_id=current_user.company_id,
+        customer_id=job.customer_id,
+        job_id=job.id,
+        created_by_id=current_user.id,
+        invoice_date=today,
+        due_date=today + timedelta(days=30),
+        currency=job.currency or "AED",
+        subtotal=subtotal,
+        vat_amount=vat_amount,
+        total_amount=total,
+        balance_due=total,
+        status="draft",
+        line_items=[{
+            "description": line_description,   # ← uses the passed description
+            "quantity": 1,
+            "unit_price": subtotal,
+            "discount_pct": 0,
+            "vat_pct": vat_pct,
+            "vat_amount": vat_amount,
+            "line_total": total,
+        }],
+    )
+    db.add(invoice)
+    job.is_invoiced = True
+    await db.commit()
+    await db.refresh(invoice)
+    return _invoice_dict(invoice)

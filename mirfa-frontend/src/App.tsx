@@ -26,6 +26,7 @@ import CustomerFormPage from '@/pages/customers/CustomerFormPage'
 import JobFormPage from '@/pages/jobs/JobFormPage'
 import { JobDetailPage } from './pages/jobs/JobDetailPage'
 import MyJobsPage from '@/pages/jobs/MyJobsPage'
+import MyJobDetailPage from '@/pages/jobs/MyJobDetailPage'
 import InvoiceDetailPage from '@/pages/accounting/InvoiceDetailPage'
 
 const queryClient = new QueryClient({
@@ -52,6 +53,9 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<RequireGuest><LoginPage /></RequireGuest>} />
           <Route path="/change-password" element={<ChangePasswordPage />} />
+          <Route path="/my-jobs" element={<RequireAuth><MyJobsPage /></RequireAuth>} />
+          <Route path="/my-jobs/:id/view" element={<RequireAuth><MyJobDetailPage /></RequireAuth>} />
+
           <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard"  element={<DashboardPage />} />
@@ -59,7 +63,6 @@ export default function App() {
             <Route path="/jobs/new"      element={<JobFormPage />} />
             <Route path="/jobs/:id"      element={<JobFormPage />} />
             <Route path="/jobs/:id/view" element={<JobDetailPage />} />
-            <Route path="/my-jobs"      element={<MyJobsPage />} />
             <Route path="/quotations" element={<QuotationsPage />} />
             <Route path="/customers"  element={<CustomersPage />} />
             <Route path="/customers/new"  element={<CustomerFormPage />} />

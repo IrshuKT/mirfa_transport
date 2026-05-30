@@ -10,7 +10,7 @@ import { Button, Input } from '@/components/ui'
 import toast from 'react-hot-toast'
 
 const loginSchema = z.object({
-  email: z.string().email('Enter a valid email'),
+  email: z.string().min(1, 'Enter a valid email or mobile number'),
   password: z.string().min(1, 'Password is required'),
   totp_code: z.string().optional(),
 })
@@ -29,8 +29,10 @@ export default function LoginPage() {
   })
 
   const onSubmit = async (data: LoginForm) => {
+    
     setLoading(true)
     try {
+    
       const { data: tokenData } = await authApi.login(data.email, data.password, data.totp_code)
 
       if (tokenData.totp_required) {
@@ -59,9 +61,10 @@ export default function LoginPage() {
       if (user.role === 'driver') navigate('/driver')
       else navigate('/dashboard')
     } catch (err: any) {
-      const msg = err.response?.data?.detail || 'Login failed. Check your credentials.'
-      toast.error(msg)
-    } finally {
+  alert('Fetch test failed: ' + err.message)
+  const msg = err.response?.data?.detail || 'Login failed. Check your credentials.'
+  toast.error(msg)
+} finally {
       setLoading(false)
     }
   }
@@ -88,9 +91,9 @@ export default function LoginPage() {
             {!totpRequired ? (
               <>
                 <Input
-                  label="Email address"
-                  type="email"
-                  placeholder="you@company.com"
+                  label="Email address Or Mobile Number"
+                  type="text"
+                  placeholder="you@company.com or 0501234567"
                   error={errors.email?.message}
                   {...register('email')}
                 />

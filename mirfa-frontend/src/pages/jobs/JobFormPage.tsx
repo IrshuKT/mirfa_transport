@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
@@ -45,12 +45,29 @@ export default function JobFormPage() {
   })
   const customers = customersData?.data?.results || []
 
-  const { register, handleSubmit, reset } = useForm<any>({
+  const [showInvoicePreview, setShowInvoicePreview] = useState(false)
+
+
+  const { register, handleSubmit, reset, watch,setValue, formState: { isDirty } } = useForm<any>({
     defaultValues: {
       priority: 'normal',
       currency: 'AED',
     }
   })
+
+ const rawCustomerId = watch('customer_id')
+const watchedCustomerId = Number(rawCustomerId) || Number((job as any)?.customer_id) || undefined
+console.log('rawCustomerId:', rawCustomerId, '→ watchedCustomerId:', watchedCustomerId)
+
+ const { data: contactCustomerData } = useQuery({
+  queryKey: ['customer', watchedCustomerId],
+  queryFn: () => customersApi.get(Number(watchedCustomerId)),
+  enabled: !!watchedCustomerId,
+})
+ 
+  const contacts = contactCustomerData?.data?.contacts || []
+
+  
 
   useEffect(() => {
     if (job) {
@@ -59,7 +76,9 @@ export default function JobFormPage() {
       const apu = splitDatetime(job.actual_pickup_at)
       const ade = splitDatetime(job.actual_delivery_at)
       reset({
-        ...job,
+        ...(job as any),
+        customer_id: (job as any).customer_id,
+        contact_id: (job as any).contact?.id ?? (job as any).contact_id,
         scheduled_pickup_date: pu.date,
         scheduled_pickup_time: pu.time,
         scheduled_delivery_date: de.date,
@@ -93,7 +112,7 @@ export default function JobFormPage() {
       delete cleaned.actual_delivery_time
 
       // Clean NaN number fields
-      const numberFields = ['agreed_amount', 'pickup_lat', 'pickup_lng', 'delivery_lat', 'delivery_lng']
+      const numberFields = ['agreed_amount', 'pickup_lat', 'pickup_lng', 'delivery_lat', 'delivery_lng','contact_id']
       numberFields.forEach(f => { if (isNaN(cleaned[f])) cleaned[f] = null })
 
       return isEdit ? jobsApi.update(Number(id), cleaned) : jobsApi.create(cleaned)
@@ -114,7 +133,8 @@ export default function JobFormPage() {
   })
 
   const invoiceMutation = useMutation({
-  mutationFn: () => invoicesApi.fromJob(Number(id)),
+  mutationFn: (description: string) =>
+    invoicesApi.fromJob(Number(id), description),
   onSuccess: (res: any) => {
     qc.invalidateQueries({ queryKey: ['job', id] })
     toast.success(`Invoice ${res.data.invoice_no} created!`)
@@ -132,6 +152,17 @@ export default function JobFormPage() {
     },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed'),
   })
+
+ const jobContactId = (job as any)?.contact?.id ?? (job as any)?.contact_id
+ 
+ useEffect(() => {
+  if (!isEdit || !contacts.length || !job) return
+  const savedContactId = (job as any)?.contact?.id ?? (job as any)?.contact_id
+  if (savedContactId) {
+    // Use String() — HTML select values are always strings
+    setValue('contact_id', String(savedContactId), { shouldDirty: false })
+  }
+}, [contacts, job])
 
   if (isEdit && isLoading) return <PageLoader />
 
@@ -169,6 +200,7 @@ export default function JobFormPage() {
                   ))}
                 </select>
               </div>
+             
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Priority</label>
                 <select
@@ -198,8 +230,54 @@ export default function JobFormPage() {
                 </select>
               </div>
             </div>
+            {contacts.length > 0 && (
+  <div className="grid grid-cols-2 gap-4">
+    <div>
+      <label className="block text-sm font-medium text-slate-700 mb-1">
+        Contact Person
+      </label>
+      <select
+        {...register('contact_id')}
+        className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm 
+                   focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+      >
+        <option value="">— Select contact —</option>
+        {contacts.map((c: any) => (
+          <option key={c.id} value={String(c.id)}>
+            {c.name}
+            {c.is_primary ? ' ★' : ''}
+            {c.designation ? ` · ${c.designation}` : ''}
+          </option>
+        ))}
+      </select>
+
+      {/* View-only: show saved contact details below the dropdown */}
+      {isEdit && (job as any)?.contact && (
+        <div className="mt-2 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200">
+          <p className="text-xs text-slate-500 mb-0.5">Currently saved</p>
+          <p className="text-sm font-medium text-slate-800">
+            {(job as any).contact.name}
+            {(job as any).contact.is_primary && (
+              <span className="ml-1 text-amber-500">★</span>
+            )}
+          </p>
+          {(job as any).contact.designation && (
+            <p className="text-xs text-slate-500">{(job as any).contact.designation}</p>
+          )}
+          {(job as any).contact.phone && (
+            <p className="text-xs text-slate-500">{(job as any).contact.phone}</p>
+          )}
+        </div>
+      )}
+    </div>
+    <div />
+  </div>
+)}
+
           </CardBody>
         </Card>
+
+        
 
         {/* Locations */}
         <Card>
@@ -353,11 +431,9 @@ export default function JobFormPage() {
           </p>
         </div>
         <Button
+        type="button"
           icon={<FileText size={15} />}
-          loading={invoiceMutation.isPending}
-          onClick={() => {
-            if (confirm('Create invoice from this job?')) invoiceMutation.mutate()
-          }}
+          onClick={() => setShowInvoicePreview(true)}
         >
           Create Invoice
         </Button>
@@ -365,6 +441,8 @@ export default function JobFormPage() {
     </CardBody>
   </Card>
 )}
+
+
 
 {isEdit && job?.is_invoiced && (
   <Card>
@@ -382,6 +460,150 @@ export default function JobFormPage() {
 
 
       </form>
+      {showInvoicePreview && job && (
+  <InvoicePreviewModal
+    job={job}
+    onClose={() => setShowInvoicePreview(false)}
+    onConfirm={(description) => {
+      invoiceMutation.mutate(description)
+      setShowInvoicePreview(false)
+    }}
+    isLoading={invoiceMutation.isPending}
+  />
+)}
     </div>
   )
+}
+
+function InvoicePreviewModal({
+  job, onClose, onConfirm, isLoading,
+}: {
+  job: any
+  onClose: () => void
+  onConfirm: (description: string) => void
+  isLoading: boolean
+}) {
+  const [description, setDescription] = useState(
+    `Transport service — ${job.pickup_address} → ${job.delivery_address}`
+  )
+  const subtotal = Number(job.agreed_amount) || 0
+  const vat = subtotal * 0.05
+  const total = subtotal + vat
+
+ return (
+  <div className="fixed inset-0 bg-slate-100 z-50 overflow-y-auto">
+    <div className="max-w-3xl mx-auto px-6 py-8 pb-24">
+
+      {/* Page Header */}
+      <div className="flex items-center justify-between mb-6">
+        <button
+          onClick={onClose}
+          className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800"
+        >
+          <ArrowLeft size={16} /> Back to Job
+        </button>
+        <div className="text-center">
+          <h1 className="text-xl font-bold text-slate-900">Invoice Preview</h1>
+          <p className="text-xs text-slate-500 mt-0.5">Review before creating</p>
+        </div>
+        <div className="w-28" />
+      </div>
+
+      {/* A4 Card */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-10 space-y-6">
+
+        {/* Job Info */}
+        <div className="bg-slate-50 rounded-xl p-4">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Job Details</p>
+          <div className="grid grid-cols-2 gap-y-2 text-sm">
+            <span className="text-slate-500">Job No.</span>
+            <span className="font-medium text-slate-800">{job.job_no}</span>
+            <span className="text-slate-500">Customer</span>
+            <span className="font-medium text-slate-800">Customer #{job.customer_id}</span>
+            {job.contact && (
+              <>
+                <span className="text-slate-500">Contact</span>
+                <span className="font-medium text-slate-800">{job.contact.name}</span>
+              </>
+            )}
+            <span className="text-slate-500">Pickup</span>
+            <span className="text-slate-700 text-xs">{job.pickup_address}</span>
+            <span className="text-slate-500">Delivery</span>
+            <span className="text-slate-700 text-xs">{job.delivery_address}</span>
+            {job.scheduled_pickup_at && (
+              <>
+                <span className="text-slate-500">Sched. Pickup</span>
+                <span className="text-slate-700 text-xs">
+                  {new Date(job.scheduled_pickup_at).toLocaleDateString()}
+                </span>
+              </>
+            )}
+            {job.scheduled_delivery_at && (
+              <>
+                <span className="text-slate-500">Sched. Delivery</span>
+                <span className="text-slate-700 text-xs">
+                  {new Date(job.scheduled_delivery_at).toLocaleDateString()}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Divider */}
+        <hr className="border-slate-200" />
+
+        {/* Editable Description */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">
+            Line Item Description
+          </label>
+          <textarea
+            rows={2}
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+          />
+        </div>
+
+        {/* Amount Breakdown */}
+        <div className="border border-slate-200 rounded-xl overflow-hidden">
+          <div className="bg-slate-50 px-4 py-2 border-b border-slate-200">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+              Amount Breakdown
+            </p>
+          </div>
+          <div className="px-4 py-4 space-y-3 text-sm">
+            <div className="flex justify-between text-slate-600">
+              <span>Subtotal</span>
+              <span className="font-medium">{job.currency} {subtotal.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-slate-600">
+              <span>VAT (5%)</span>
+              <span className="font-medium">{job.currency} {vat.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between font-bold text-sky-700 border-t border-slate-200 pt-3">
+              <span>Total</span>
+              <span>{job.currency} {total.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    {/* Sticky Footer */}
+    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-6 py-4 flex justify-end gap-3 shadow-lg">
+      <Button type="button" variant="outline" onClick={onClose}>
+        Cancel
+      </Button>
+      <Button
+        icon={<FileText size={15} />}
+        loading={isLoading}
+        onClick={() => onConfirm(description)}
+      >
+        Confirm & Create Invoice
+      </Button>
+    </div>
+  </div>
+)
 }
