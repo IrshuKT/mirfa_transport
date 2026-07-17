@@ -38,6 +38,14 @@ class Settings(BaseSettings):
     SENDGRID_API_KEY: str = ""
     DEFAULT_FROM_EMAIL: str = "noreply@example.com"
 
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+
+    # Firebase
+    FIREBASE_CREDENTIALS_JSON: str = "./firebase-credentials.json"
+
     # SMS
     TWILIO_ACCOUNT_SID: str = ""
     TWILIO_AUTH_TOKEN: str = ""
@@ -54,8 +62,8 @@ class Settings(BaseSettings):
     MAX_PAGE_SIZE: int = 200
 
     # CORS
-    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173","capacitor://localhost",   
-    "http://localhost",  "http://192.168.29.226:5173","http://192.168.29.226:3000",   ]
+    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000","capacitor://localhost",   
+    "http://localhost",   ]
 
     base_url: str = "http://localhost:8000"
 

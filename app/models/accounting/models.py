@@ -37,6 +37,7 @@ class Account(Base):
     description: Mapped[Optional[str]] = mapped_column(Text)
     children: Mapped[List["Account"]] = relationship("Account")
     journal_lines: Mapped[List["JournalLine"]] = relationship("JournalLine", back_populates="account")
+    is_cash: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class Bank(Base):

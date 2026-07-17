@@ -38,6 +38,11 @@ async def login(
         )
     )
     user: Optional[User] = result.scalar_one_or_none()
+    print("EMAIL SEARCHED:", payload.email)
+    print("USER FOUND:", user)
+    if user:
+        print("HASHED IN DB:", user.hashed_password)
+        print("VERIFY RESULT:", verify_password(payload.password, user.hashed_password))
 
     if not user or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(

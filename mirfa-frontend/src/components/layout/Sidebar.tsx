@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Briefcase, FileText, Users, Building2,
   Truck, UserCheck, FolderOpen, Receipt, BookOpen,
   BarChart3, Settings, LogOut, ChevronDown, ChevronRight,
-  AlertTriangle, CreditCard, FileSpreadsheet, Landmark,
+  AlertTriangle, CreditCard, FileSpreadsheet, Landmark,Wallet
 } from 'lucide-react'
 import { useState } from 'react'
 import type { Role } from '@/types'
@@ -75,6 +75,8 @@ const NAV: NavItem[] = [
       { label: 'Receipts',      icon: <CreditCard size={16} />,      to: '/accounting/receipts' },
       { label: 'Payments',      icon: <CreditCard size={16} />,      to: '/accounting/payments' },
       { label: 'Journals',      icon: <FileSpreadsheet size={16} />, to: '/accounting/journals' },
+ { label: 'Cash Book', icon: <Wallet size={16} />, to: '/accounting/cash-book' },
+
       { label: 'Banks',         icon: <Landmark size={16} />,        to: '/accounting/banks' },
       { label: 'Chart of Accts',icon: <BookOpen size={16} />,        to: '/accounting/coa' },
       { label: 'Reports',       icon: <BarChart3 size={16} />,       to: '/accounting/reports' },

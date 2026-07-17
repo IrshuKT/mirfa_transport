@@ -14,10 +14,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 COA = [
     # ── ASSETS ─────────────────────────────────────────────────────────────
     {"code": "1000", "name": "Current Assets",               "type": "asset",     "parent": None},
-    {"code": "1010", "name": "Cash on Hand",                 "type": "asset",     "parent": "1000"},
+    {"code": "1010", "name": "Cash on Hand",                 "type": "asset",     "parent": "1000", "is_cash": True},
     {"code": "1020", "name": "Bank — Emirates NBD",          "type": "asset",     "parent": "1000"},
     {"code": "1021", "name": "Bank — FAB",                   "type": "asset",     "parent": "1000"},
-    {"code": "1030", "name": "Petty Cash",                   "type": "asset",     "parent": "1000"},
+    {"code": "1030", "name": "Petty Cash",                   "type": "asset",     "parent": "1000", "is_cash": True},
     {"code": "1100", "name": "Accounts Receivable",          "type": "asset",     "parent": "1000", "is_control": True},
     {"code": "1110", "name": "Advance to Drivers",           "type": "asset",     "parent": "1000"},
     {"code": "1120", "name": "Advance to Employees",         "type": "asset",     "parent": "1000"},
@@ -104,6 +104,10 @@ async def seed_coa(company_id: int):
             )
             if existing:
                 code_to_id[entry["code"]] = existing.id
+                # Backfill is_cash on existing rows too, in case this is a re-run
+                # after adding the flag to a company that was already seeded.
+                if entry.get("is_cash") and not existing.is_cash:
+                    existing.is_cash = True
                 continue
 
             parent_id = None
@@ -117,6 +121,7 @@ async def seed_coa(company_id: int):
                 account_type=AccountType(entry["type"]),
                 parent_id=parent_id,
                 is_control=entry.get("is_control", False),
+                is_cash=entry.get("is_cash", False),
                 is_active=True,
             )
             db.add(account)

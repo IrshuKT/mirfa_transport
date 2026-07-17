@@ -11,7 +11,7 @@ from app.core.database import init_db
 
 from app.routers import auth, users, jobs, customers, vendors, quotations
 from app.routers import employees, drivers, fleet, documents, companies
-from app.routers.accounting import coa, banks, invoices, reports
+from app.routers.accounting import coa, banks, invoices, reports,ledger
 from app.routers.accounting.receipts import receipts_router, payments_router, journals_router
 import os
 
@@ -78,6 +78,7 @@ app.include_router(receipts_router,    prefix=P)
 app.include_router(payments_router,    prefix=P)
 app.include_router(journals_router,    prefix=P)
 app.include_router(reports.router,     prefix=P)
+app.include_router(ledger.router, prefix=P)
 
 
 app.mount("/media", StaticFiles(directory="media"), name="media")

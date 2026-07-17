@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Key, User as UserIcon, Shield, Trash2, Eye, EyeOff, Building2 } from 'lucide-react'
-import { authApi, usersApi, rolesApi, inviteApi,companiesApi } from '@/api/services'
+import { authApi, usersApi, rolesApi, inviteApi, companiesApi } from '@/api/services'
 import { useAuthStore } from '@/stores/authStore'
 import {
   Button, Card, CardBody, CardHeader, PageHeader,
@@ -18,45 +18,45 @@ import { formatDate } from '@/lib/utils'
 
 // ── Role colours ──────────────────────────────────────────────────────────────
 const ROLE_COLORS: Record<string, string> = {
-  super_admin:     'bg-red-100 text-red-700',
-  company_admin:   'bg-purple-100 text-purple-700',
-  accountant:      'bg-blue-100 text-blue-700',
-  dispatcher:      'bg-indigo-100 text-indigo-700',
-  staff:           'bg-sky-100 text-sky-700',
-  driver:          'bg-green-100 text-green-700',
+  super_admin: 'bg-red-100 text-red-700',
+  company_admin: 'bg-purple-100 text-purple-700',
+  accountant: 'bg-blue-100 text-blue-700',
+  dispatcher: 'bg-indigo-100 text-indigo-700',
+  staff: 'bg-sky-100 text-sky-700',
+  driver: 'bg-green-100 text-green-700',
   customer_portal: 'bg-orange-100 text-orange-700',
-  vendor_portal:   'bg-yellow-100 text-yellow-700',
+  vendor_portal: 'bg-yellow-100 text-yellow-700',
 }
 
 // ── Create user schema ────────────────────────────────────────────────────────
 const createSchema = z.object({
   full_name: z.string().min(2, 'Name is required'),
-  email:     z.string().email('Enter a valid email'),
-  password:  z.string()
-               .min(8,  'Min 8 characters')
-               .regex(/[A-Z]/, 'Need one uppercase letter')
-               .regex(/[0-9]/, 'Need one number'),
-  phone:     z.string().optional(),
+  email: z.string().email('Enter a valid email'),
+  password: z.string()
+    .min(8, 'Min 8 characters')
+    .regex(/[A-Z]/, 'Need one uppercase letter')
+    .regex(/[0-9]/, 'Need one number'),
+  phone: z.string().optional(),
   role_name: z.string().min(1, 'Select a role'),
 })
 type CreateForm = z.infer<typeof createSchema>
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
-type Tab = 'users' | 'profile' | 'password'|'company'
+type Tab = 'users' | 'profile' | 'password' | 'company'
 
 export default function SettingsPage() {
   const { user } = useAuthStore()
   const [tab, setTab] = useState<Tab>('users')
   const isAdmin = user?.role === 'super_admin' || user?.role === 'company_admin'
-  
+
   const tabs = [
-    { id: 'users'    as Tab, label: 'Users',    icon: <UserIcon size={15} />, show: isAdmin },
-    { id: 'profile'  as Tab, label: 'Profile',  icon: <Shield size={15} />,   show: true },
-    { id: 'password' as Tab, label: 'Password', icon: <Key size={15} />,      show: true },
+    { id: 'users' as Tab, label: 'Users', icon: <UserIcon size={15} />, show: isAdmin },
+    { id: 'profile' as Tab, label: 'Profile', icon: <Shield size={15} />, show: true },
+    { id: 'password' as Tab, label: 'Password', icon: <Key size={15} />, show: true },
     { id: 'company' as Tab, label: 'Company', icon: <Building2 size={15} />, show: isAdmin },
   ].filter(t => t.show)
 
-  
+
 
   return (
     <div className="space-y-5">
@@ -66,16 +66,15 @@ export default function SettingsPage() {
       <div className="flex gap-1 bg-slate-100 rounded-xl p-1 w-fit">
         {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              tab === t.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-            }`}>
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === t.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}>
             {t.icon}{t.label}
           </button>
         ))}
       </div>
 
-      {tab === 'users'    && isAdmin && <UsersTab />}
-      {tab === 'profile'  && <ProfileTab />}
+      {tab === 'users' && isAdmin && <UsersTab />}
+      {tab === 'profile' && <ProfileTab />}
       {tab === 'password' && <PasswordTab />}
       {tab === 'company' && isAdmin && <CompanyTab />}
     </div>
@@ -98,19 +97,37 @@ function UsersTab() {
   const deactivateMutation = useMutation({
     mutationFn: (id: number) => usersApi.deactivate(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast.success('User deactivated') },
-    onError:   () => toast.error('Failed to deactivate user'),
+    onError: () => toast.error('Failed to deactivate user'),
+  })
+
+  const reactivateMutation = useMutation({
+    mutationFn: (id: number) => usersApi.reactivate(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['users'] })
+      toast.success('User reactivated')
+    },
+    onError: () => toast.error('Failed to reactivate user'),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => usersApi.delete(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['users'] })
+      toast.success('User deleted')
+    },
+    onError: () => toast.error('Failed to delete user'),
   })
 
   const users = data?.data
 
- const resetMutation = useMutation({
-  mutationFn: (id: number) => usersApi.resetPassword(id),
-  onSuccess: (res: any) => {
-    toast.success(`Temp password: ${res.data.temp_password}`, { duration: 10000 })
-  },
-  onError: () => toast.error('Failed to reset password'),
-})
-  
+  const resetMutation = useMutation({
+    mutationFn: (id: number) => usersApi.resetPassword(id),
+    onSuccess: (res: any) => {
+      toast.success(`Temp password: ${res.data.temp_password}`, { duration: 10000 })
+    },
+    onError: () => toast.error('Failed to reset password'),
+  })
+
 
   return (
     <div className="space-y-4">
@@ -188,18 +205,44 @@ function UsersTab() {
                         className="text-red-500 hover:text-red-700 hover:bg-red-50">
                         Deactivate
                       </Button>
-                      
+
                     )}
+
+                    {/*  Reactivate button for inactive users */}
+                    {u.id !== me?.id && u.status === 'inactive' && (
+                      <Button size="sm" variant="ghost"
+                        loading={reactivateMutation.isPending}
+                        onClick={() => reactivateMutation.mutate(u.id)}
+                        className="text-green-500 hover:text-green-700 hover:bg-green-50">
+                        ✓ Reactivate
+                      </Button>
+                    )}
+
+                    {/*  Delete button */}
                     {u.id !== me?.id && (
-      <Button size="sm" variant="ghost"
-        icon={<Key size={13} />}
-        onClick={() => resetMutation.mutate(u.id)}
-        className="text-sky-500 hover:text-sky-700 hover:bg-sky-50">
-        Reset Password
-      </Button>
-    ) }
+                      <Button size="sm" variant="ghost"
+                        icon={<Trash2 size={13} />}
+                        loading={deleteMutation.isPending}
+                        onClick={() => {
+                          if (confirm(`Permanently DELETE ${u.full_name}? This cannot be undone.`))
+                            deleteMutation.mutate(u.id)
+                        }}
+                        className="text-red-700 hover:text-red-900 hover:bg-red-100">
+                        Delete
+                      </Button>
+                    )}
+
+
+                    {u.id !== me?.id && (
+                      <Button size="sm" variant="ghost"
+                        icon={<Key size={13} />}
+                        onClick={() => resetMutation.mutate(u.id)}
+                        className="text-sky-500 hover:text-sky-700 hover:bg-sky-50">
+                        Reset Password
+                      </Button>
+                    )}
                   </Td>
-                 
+
                 </tr>
               ))}
             </tbody>
@@ -209,8 +252,8 @@ function UsersTab() {
           <div className="flex items-center justify-between px-6 py-3 border-t border-slate-100">
             <p className="text-sm text-slate-500">Page {page} of {users.pages}</p>
             <div className="flex gap-2">
-              <Button size="sm" variant="outline" disabled={page===1} onClick={() => setPage(p=>p-1)}>Prev</Button>
-              <Button size="sm" variant="outline" disabled={page>=users.pages} onClick={() => setPage(p=>p+1)}>Next</Button>
+              <Button size="sm" variant="outline" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Prev</Button>
+              <Button size="sm" variant="outline" disabled={page >= users.pages} onClick={() => setPage(p => p + 1)}>Next</Button>
             </div>
           </div>
         )}
@@ -234,31 +277,31 @@ function CreateUserModal({ open, onClose }: { open: boolean; onClose: () => void
 
   const password = watch('password') || ''
   const strengthChecks = [
-    { label: '8+ chars',   ok: password.length >= 8 },
-    { label: 'Uppercase',  ok: /[A-Z]/.test(password) },
-    { label: 'Number',     ok: /[0-9]/.test(password) },
-    { label: '12+ chars',  ok: password.length >= 12 },
+    { label: '8+ chars', ok: password.length >= 8 },
+    { label: 'Uppercase', ok: /[A-Z]/.test(password) },
+    { label: 'Number', ok: /[0-9]/.test(password) },
+    { label: '12+ chars', ok: password.length >= 12 },
   ]
 
   // Role options — filtered by current user role
   const roleOptions = [
     ...(me?.role === 'super_admin' ? [{ value: 'company_admin', label: 'Company Admin' }] : []),
-    { value: 'accountant',      label: 'Accountant' },
-    { value: 'dispatcher',      label: 'Dispatcher' },
-    { value: 'staff',           label: 'Staff' },
-    { value: 'driver',          label: 'Driver' },
+    { value: 'accountant', label: 'Accountant' },
+    { value: 'dispatcher', label: 'Dispatcher' },
+    { value: 'staff', label: 'Staff' },
+    { value: 'driver', label: 'Driver' },
     { value: 'customer_portal', label: 'Customer Portal' },
-    { value: 'vendor_portal',   label: 'Vendor Portal' },
+    { value: 'vendor_portal', label: 'Vendor Portal' },
   ]
 
   const ROLE_DESCRIPTIONS: Record<string, string> = {
-    company_admin:   'Full access within company — manage all modules',
-    accountant:      'Accounting module + read-only access to jobs',
-    dispatcher:      'Manage jobs, assign drivers, track fleet',
-    staff:           'Create quotations, manage customers, read jobs',
-    driver:          'View own assigned jobs only (mobile app login)',
+    company_admin: 'Full access within company — manage all modules',
+    accountant: 'Accounting module + read-only access to jobs',
+    dispatcher: 'Manage jobs, assign drivers, track fleet',
+    staff: 'Create quotations, manage customers, read jobs',
+    driver: 'View own assigned jobs only (mobile app login)',
     customer_portal: 'Customer self-service — view their jobs & invoices',
-    vendor_portal:   'Vendor/subcontractor — view assigned jobs',
+    vendor_portal: 'Vendor/subcontractor — view assigned jobs',
   }
 
   const selectedRole = watch('role_name')
@@ -271,29 +314,18 @@ function CreateUserModal({ open, onClose }: { open: boolean; onClose: () => void
 
   const mutation = useMutation({
     mutationFn: async (data: CreateForm) => {
-      const roles = rolesData?.data || []
-      const role = roles.find((r: any) => r.name === data.role_name)
-      
-      // Fallback role ID map if API hasn't loaded yet
-      const fallbackMap: Record<string, number> = {
-        super_admin: 1, company_admin: 2, accountant: 3,
-        dispatcher: 4, staff: 5, driver: 6,
-        customer_portal: 7, vendor_portal: 8,
-      }
-      const role_id = role?.id ?? fallbackMap[data.role_name] ?? 5
-
-      // Use invite endpoint — creates user by role name + sends welcome email
       return inviteApi.inviteUser({
-        full_name:           data.full_name,
-        email:               data.email,
-        phone:               data.phone || undefined,
-        role_name:           data.role_name,
-        send_welcome_email:  true,
+        full_name: data.full_name,
+        email: data.email,
+        phone: data.phone || undefined,
+        role_name: data.role_name,
+        password: data.password,
+        send_welcome_email: true,
       })
     },
     onSuccess: (res: any) => {
       qc.invalidateQueries({ queryKey: ['users'] })
-      toast.success(`✅ User "${res.data.full_name}" created!`)
+      toast.success(res.data.message)
       reset()
       onClose()
     },
@@ -394,11 +426,11 @@ function ProfileTab() {
         </div>
         <div className="grid grid-cols-2 gap-4 text-sm border-t border-slate-100 pt-4">
           {[
-            ['Full Name',  user?.full_name],
-            ['Email',      user?.email],
-            ['Phone',      user?.phone || '—'],
-            ['Role',       user?.role?.replace(/_/g, ' ')],
-            ['2FA',        user?.totp_enabled ? '✓ Enabled' : 'Disabled'],
+            ['Full Name', user?.full_name],
+            ['Email', user?.email],
+            ['Phone', user?.phone || '—'],
+            ['Role', user?.role?.replace(/_/g, ' ')],
+            ['2FA', user?.totp_enabled ? '✓ Enabled' : 'Disabled'],
             ['Last Login', formatDate(user?.last_login_at)],
           ].map(([label, value]) => (
             <div key={label}>
@@ -415,15 +447,15 @@ function ProfileTab() {
 // ── Password Tab ──────────────────────────────────────────────────────────────
 function PasswordTab() {
   const [currentPw, setCurrentPw] = useState('')
-  const [newPw, setNewPw]         = useState('')
-  const [confirm, setConfirm]     = useState('')
-  const [loading, setLoading]     = useState(false)
-  const [showNew, setShowNew]     = useState(false)
+  const [newPw, setNewPw] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [showNew, setShowNew] = useState(false)
 
   const checks = [
-    { label: '8+ characters',   ok: newPw.length >= 8 },
-    { label: '1 uppercase',     ok: /[A-Z]/.test(newPw) },
-    { label: '1 number',        ok: /[0-9]/.test(newPw) },
+    { label: '8+ characters', ok: newPw.length >= 8 },
+    { label: '1 uppercase', ok: /[A-Z]/.test(newPw) },
+    { label: '1 number', ok: /[0-9]/.test(newPw) },
     { label: 'Passwords match', ok: newPw === confirm && confirm.length > 0 },
   ]
   const allOk = checks.every(c => c.ok)
@@ -502,15 +534,15 @@ function CompanyTab() {
 
   const { register, handleSubmit, reset, formState: { errors, isDirty } } = useForm({
     values: company ? {
-      name:             company.name,
+      name: company.name,
       trade_license_no: company.trade_license_no || '',
-      trn:              company.trn || '',
-      address:          company.address || '',
-      city:             company.city || '',
-      phone:            company.phone || '',
-      email:            company.email || '',
-      vat_rate:         company.vat_rate ?? 0.05,
-      currency:         company.currency || 'AED',
+      trn: company.trn || '',
+      address: company.address || '',
+      city: company.city || '',
+      phone: company.phone || '',
+      email: company.email || '',
+      vat_rate: company.vat_rate ?? 0.05,
+      currency: company.currency || 'AED',
     } : undefined,
   })
 
@@ -533,7 +565,7 @@ function CompanyTab() {
       </CardHeader>
       <CardBody>
         <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4">
-          
+
           {/* Company Name */}
           <Input label="Company Name *" {...register('name', { required: true })} />
 

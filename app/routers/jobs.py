@@ -396,6 +396,42 @@ async def dispatch_job(
     db.add(dispatch)
     await db.commit()
     await db.refresh(dispatch)
+
+    # ── Send push notification to driver ─────────────────────────────────
+    try:
+        from app.models.entities import Driver
+        from app.services.notification_service import send_push, send_sms
+
+        result = await db.execute(
+            select(Driver).where(Driver.id == payload.driver_id)
+        )
+        driver = result.scalar_one_or_none()
+
+        if driver:
+            # Push notification
+            if driver.fcm_token:
+                await send_push(
+                    fcm_token=driver.fcm_token,
+                    title="🚛 New Job Assigned",
+                    body=f"Job {job.job_no}: {job.pickup_address} → {job.delivery_address}",
+                    data={
+                        "job_id":   str(job.id),
+                        "job_no":   job.job_no,
+                        "type":     "new_job",
+                    },
+                )
+
+            # SMS fallback
+            if driver.mobile:
+                await send_sms(
+                    to_number=driver.mobile,
+                    body=f"New job assigned: {job.job_no}\nPickup: {job.pickup_address}\nDelivery: {job.delivery_address}",
+                )
+    except Exception as e:
+        # Never fail the dispatch just because notification failed
+        print(f"Warning: Notification failed: {e}")
+    # ─────────────────────────────────────────────────────────────────────
+
     return {"id": dispatch.id, "job_id": job_id, "status": dispatch.status}
 
 

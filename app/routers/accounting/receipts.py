@@ -9,9 +9,13 @@ from app.core.database import get_db
 from app.core.dependencies import CurrentUser, AccountantRequired
 from app.models.accounting.models import (
     Receipt, PaymentMethod, Invoice, VendorInvoice, VendorPayment,
-    JournalEntry, JournalLine, JournalType
+    JournalEntry, JournalLine, JournalType, Account,
 )
-from app.services.invoice_service import post_receipt_journal
+# NOTE: adjust these two imports to wherever your Vendor/Customer models
+# actually live in your codebase (e.g. app.models.vendors, app.models.customers)
+from app.models.entities import Vendor,Customer
+from app.services.invoice_service import post_receipt_journal, post_receipt_journal_unlinked
+from app.services.accounting_helpers import resolve_cash_or_bank_account_id
 from app.utils.numbering import next_receipt_no, next_payment_no, next_journal_no
 from app.utils.pagination import paginate
 
@@ -68,7 +72,13 @@ async def create_receipt(
     db.add(receipt)
     await db.flush()
 
-    # Post journal entry and update invoice if linked
+    # Always resolve the correct bank/cash GL account up front, based on
+    # receipt.bank_id — this fixes receipts silently posting to a hardcoded
+    # account regardless of what the user selected.
+    bank_or_cash_account_id = await resolve_cash_or_bank_account_id(
+        db, current_user.company_id, payload.bank_id
+    )
+
     if payload.invoice_id:
         invoice_result = await db.execute(
             select(Invoice).where(Invoice.id == payload.invoice_id, Invoice.company_id == current_user.company_id)
@@ -76,10 +86,23 @@ async def create_receipt(
         invoice = invoice_result.scalar_one_or_none()
         if not invoice:
             raise HTTPException(status_code=404, detail="Invoice not found")
-        await post_receipt_journal(db, receipt, invoice, current_user.id)
+        await post_receipt_journal(db, receipt, invoice, current_user.id, bank_account_id=bank_or_cash_account_id)
     else:
-        receipt.is_posted = True
-        await db.commit()
+        customer_result = await db.execute(
+            select(Customer).where(Customer.id == payload.customer_id, Customer.company_id == current_user.company_id)
+        )
+        customer = customer_result.scalar_one_or_none()
+        if not customer:
+            raise HTTPException(status_code=404, detail="Customer not found")
+        if not customer.receivable_account_id:
+            raise HTTPException(status_code=400, detail="Customer has no receivable account configured")
+
+        await post_receipt_journal_unlinked(
+            db, receipt,
+            receivable_account_id=customer.receivable_account_id,
+            bank_account_id=bank_or_cash_account_id,
+            created_by_id=current_user.id,
+        )
 
     await db.refresh(receipt)
     return _fmt_receipt(receipt)
@@ -113,6 +136,39 @@ class PaymentCreate(BaseModel):
     notes: Optional[str] = None
 
 
+async def post_vendor_payment_journal(
+    db: AsyncSession, payment: VendorPayment,
+    vendor_payable_account_id: int, bank_or_cash_account_id: int,
+    current_user_id: int,
+) -> JournalEntry:
+    jv_no = await next_journal_no(db, payment.company_id)
+    je = JournalEntry(
+        company_id=payment.company_id,
+        created_by_id=current_user_id,
+        journal_no=jv_no,
+        journal_type=JournalType.BANK if payment.bank_id else JournalType.CASH_PAYMENT,
+        entry_date=payment.payment_date,
+        reference=payment.payment_no,
+        description=f"Vendor payment {payment.payment_no}",
+        is_posted=True,
+        total_debit=payment.amount,
+        total_credit=payment.amount,
+    )
+    db.add(je)
+    await db.flush()
+    db.add(JournalLine(
+        journal_entry_id=je.id, account_id=vendor_payable_account_id,
+        description=f"Payment {payment.payment_no}", debit=payment.amount, credit=0,
+        currency=payment.currency,
+    ))
+    db.add(JournalLine(
+        journal_entry_id=je.id, account_id=bank_or_cash_account_id,
+        description=f"Payment {payment.payment_no}", debit=0, credit=payment.amount,
+        currency=payment.currency,
+    ))
+    return je
+
+
 @payments_router.get("")
 async def list_payments(
     db: DB, current_user: CurrentUser,
@@ -128,19 +184,31 @@ async def list_payments(
 
 
 @payments_router.post("", status_code=status.HTTP_201_CREATED)
-async def create_payment(
-    payload: PaymentCreate, db: DB, current_user: CurrentUser,
-):
+async def create_payment(payload: PaymentCreate, db: DB, current_user: CurrentUser):
+    vendor_result = await db.execute(
+        select(Vendor).where(Vendor.id == payload.vendor_id, Vendor.company_id == current_user.company_id)
+    )
+    vendor = vendor_result.scalar_one_or_none()
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+    if not vendor.payable_account_id:
+        raise HTTPException(status_code=400, detail="Vendor has no payable account configured")
+
+    bank_or_cash_account_id = await resolve_cash_or_bank_account_id(db, current_user.company_id, payload.bank_id)
+
     payment_no = await next_payment_no(db, current_user.company_id)
     payment = VendorPayment(
         company_id=current_user.company_id,
         created_by_id=current_user.id,
         payment_no=payment_no,
+        is_posted=True,
         **payload.model_dump(),
     )
     db.add(payment)
+    await db.flush()
 
-    # Update vendor invoice balance if linked
+    await post_vendor_payment_journal(db, payment, vendor.payable_account_id, bank_or_cash_account_id, current_user.id)
+
     if payload.vendor_invoice_id:
         vi_result = await db.execute(
             select(VendorInvoice).where(

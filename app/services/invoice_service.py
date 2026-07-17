@@ -18,7 +18,8 @@ from app.utils.numbering import next_invoice_no, next_journal_no
 AR_ACCOUNT_CODE = "1100"        # Accounts Receivable
 VAT_OUTPUT_CODE = "2200"        # VAT Payable (Output)
 REVENUE_CODE    = "4100"        # Revenue - Freight
-BANK_CODE       = "1020"        # Default bank / cash
+# BANK_CODE removed — bank/cash account is now always resolved explicitly per
+# receipt via resolve_cash_or_bank_account_id(), never a hardcoded fallback.
 
 
 def _calc_line(qty: float, unit_price: float, disc_pct: float, vat_pct: float) -> dict:
@@ -131,6 +132,9 @@ async def post_invoice_journal(db: AsyncSession, invoice: Invoice, created_by_id
     rev_id = await _get_account_id(db, company_id, REVENUE_CODE)
     vat_id = await _get_account_id(db, company_id, VAT_OUTPUT_CODE)
 
+    if not ar_id or not rev_id:
+        raise ValueError("Missing required Accounts Receivable or Revenue account in chart of accounts")
+
     je = JournalEntry(
         company_id=company_id,
         created_by_id=created_by_id,
@@ -161,24 +165,30 @@ async def post_invoice_journal(db: AsyncSession, invoice: Invoice, created_by_id
 
 
 async def post_receipt_journal(
-    db: AsyncSession, receipt: Receipt, invoice: Invoice, created_by_id: int, bank_account_id: Optional[int] = None
+    db: AsyncSession, receipt: Receipt, invoice: Invoice, created_by_id: int, bank_account_id: int
 ) -> JournalEntry:
     """
     Post the receipt journal entry:
       DR  Bank / Cash           (amount received)
       CR  Accounts Receivable   (reduce AR)
+
+    bank_account_id is now REQUIRED — no hardcoded fallback account. Callers
+    must resolve it via accounting_helpers.resolve_cash_or_bank_account_id()
+    based on receipt.bank_id, so cash receipts land in the Cash account and
+    bank receipts land in the correct Bank's account.
     """
     company_id = receipt.company_id
     jv_no = await next_journal_no(db, company_id)
 
-    ar_id   = await _get_account_id(db, company_id, AR_ACCOUNT_CODE)
-    bank_id = bank_account_id or await _get_account_id(db, company_id, BANK_CODE)
+    ar_id = await _get_account_id(db, company_id, AR_ACCOUNT_CODE)
+    if not ar_id:
+        raise ValueError("Accounts Receivable account not found in chart of accounts")
 
     je = JournalEntry(
         company_id=company_id,
         created_by_id=created_by_id,
         journal_no=jv_no,
-        journal_type=JournalType.CASH_RECEIPT,
+        journal_type=JournalType.BANK if receipt.bank_id else JournalType.CASH_RECEIPT,
         entry_date=receipt.receipt_date,
         reference=receipt.receipt_no,
         description=f"Receipt {receipt.receipt_no} for invoice {invoice.invoice_no}",
@@ -189,8 +199,8 @@ async def post_receipt_journal(
     db.add(je)
     await db.flush()
 
-    db.add(JournalLine(journal_entry_id=je.id, account_id=bank_id,
-                       description=f"Bank receipt - {receipt.receipt_no}",
+    db.add(JournalLine(journal_entry_id=je.id, account_id=bank_account_id,
+                       description=f"Bank/Cash receipt - {receipt.receipt_no}",
                        debit=receipt.amount, credit=0, currency=receipt.currency))
     db.add(JournalLine(journal_entry_id=je.id, account_id=ar_id,
                        description=f"AR settlement - {invoice.invoice_no}",
@@ -206,5 +216,46 @@ async def post_receipt_journal(
         else InvoiceStatus.PARTIALLY_PAID
     )
 
+    receipt.is_posted = True
+    await db.commit()
+    return je
+
+
+async def post_receipt_journal_unlinked(
+    db: AsyncSession, receipt: Receipt, receivable_account_id: int,
+    bank_account_id: int, created_by_id: int,
+) -> JournalEntry:
+    """
+    Post a receipt that isn't tied to a specific invoice (e.g. advance/on-account
+    payment):
+      DR  Bank / Cash
+      CR  Customer Receivable (or a generic AR/advances account)
+    """
+    company_id = receipt.company_id
+    jv_no = await next_journal_no(db, company_id)
+
+    je = JournalEntry(
+        company_id=company_id,
+        created_by_id=created_by_id,
+        journal_no=jv_no,
+        journal_type=JournalType.BANK if receipt.bank_id else JournalType.CASH_RECEIPT,
+        entry_date=receipt.receipt_date,
+        reference=receipt.receipt_no,
+        description=f"Receipt {receipt.receipt_no} (on account)",
+        is_posted=True,
+        total_debit=receipt.amount,
+        total_credit=receipt.amount,
+    )
+    db.add(je)
+    await db.flush()
+
+    db.add(JournalLine(journal_entry_id=je.id, account_id=bank_account_id,
+                       description=f"Bank/Cash receipt - {receipt.receipt_no}",
+                       debit=receipt.amount, credit=0, currency=receipt.currency))
+    db.add(JournalLine(journal_entry_id=je.id, account_id=receivable_account_id,
+                       description=f"On-account receipt - {receipt.receipt_no}",
+                       debit=0, credit=receipt.amount, currency=receipt.currency))
+
+    receipt.is_posted = True
     await db.commit()
     return je

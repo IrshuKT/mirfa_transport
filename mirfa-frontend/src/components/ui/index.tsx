@@ -1,6 +1,6 @@
 import { cn, getStatusColor } from '@/lib/utils'
 import { Loader2, X } from 'lucide-react'
-import { forwardRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react'
+import { forwardRef, type ButtonHTMLAttributes, type HTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react'
 
 // ── Badge ─────────────────────────────────────────────────────────────────────
 export function Badge({ children, className }: { children: ReactNode; className?: string }) {
@@ -65,20 +65,24 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
 Button.displayName = 'Button'
 
 // ── Card ──────────────────────────────────────────────────────────────────────
-export function Card({ children, className }: { children: ReactNode; className?: string }) {
+interface CardProps extends HTMLAttributes<HTMLDivElement> {
+  children: ReactNode
+}
+
+export function Card({ children, className, ...props }: CardProps) {
   return (
-    <div className={cn('bg-white rounded-xl border border-slate-200 shadow-sm', className)}>
+    <div className={cn('bg-white rounded-xl border border-slate-200 shadow-sm', className)} {...props}>
       {children}
     </div>
   )
 }
 
-export function CardHeader({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn('px-6 py-4 border-b border-slate-100', className)}>{children}</div>
+export function CardHeader({ children, className, ...props }: CardProps) {
+  return <div className={cn('px-6 py-4 border-b border-slate-100', className)} {...props}>{children}</div>
 }
 
-export function CardBody({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn('px-6 py-4', className)}>{children}</div>
+export function CardBody({ children, className, ...props }: CardProps) {
+  return <div className={cn('px-6 py-4', className)} {...props}>{children}</div>
 }
 
 // ── Input ─────────────────────────────────────────────────────────────────────
@@ -239,11 +243,12 @@ export function Modal({ open, onClose, title, children, size = 'md' }: ModalProp
 }
 
 // ── Empty state ───────────────────────────────────────────────────────────────
-export function EmptyState({ title, description, action }: {
-  title: string; description?: string; action?: ReactNode
+export function EmptyState({ title, description, action, icon }: {
+  title: string; description?: string; action?: ReactNode; icon?: ReactNode
 }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
+      {icon && <div className="mb-3 text-slate-300">{icon}</div>}
       <p className="text-lg font-medium text-slate-700">{title}</p>
       {description && <p className="mt-1 text-sm text-slate-500">{description}</p>}
       {action && <div className="mt-4">{action}</div>}

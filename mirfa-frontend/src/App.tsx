@@ -28,6 +28,7 @@ import { JobDetailPage } from './pages/jobs/JobDetailPage'
 import MyJobsPage from '@/pages/jobs/MyJobsPage'
 import MyJobDetailPage from '@/pages/jobs/MyJobDetailPage'
 import InvoiceDetailPage from '@/pages/accounting/InvoiceDetailPage'
+import CashBookPage from '@/pages/accounting/CashBookPage'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000, refetchOnWindowFocus: false } },
@@ -77,6 +78,7 @@ export default function App() {
             <Route path="/accounting/receipts" element={<ReceiptsPage />} />
             <Route path="/accounting/payments" element={<PaymentsPage />} />
             <Route path="/accounting/journals" element={<JournalsPage />} />
+            <Route path="/accounting/cash-book" element={<CashBookPage />} />
             <Route path="/accounting/banks"    element={<BanksPage />} />
             <Route path="/accounting/coa"      element={<CoaPage />} />
             <Route path="/accounting/reports"  element={<ReportsPage />} />

@@ -12,6 +12,29 @@ logger = logging.getLogger(__name__)
 
 # ── Email (SendGrid) ──────────────────────────────────────────────────────────
 
+# async def send_email(
+#     to_email: str,
+#     subject: str,
+#     html_body: str,
+#     from_email: Optional[str] = None,
+# ) -> bool:
+#     try:
+#         from sendgrid import SendGridAPIClient
+#         from sendgrid.helpers.mail import Mail
+#         message = Mail(
+#             from_email=from_email or settings.DEFAULT_FROM_EMAIL,
+#             to_emails=to_email,
+#             subject=subject,
+#             html_content=html_body,
+#         )
+#         sg = SendGridAPIClient(settings.SENDGRID_API_KEY)
+#         response = sg.send(message)
+#         logger.info(f"Email sent to {to_email}: {response.status_code}")
+#         return response.status_code in (200, 202)
+#     except Exception as e:
+#         logger.error(f"Email send failed to {to_email}: {e}")
+#         return False
+
 async def send_email(
     to_email: str,
     subject: str,
@@ -19,18 +42,26 @@ async def send_email(
     from_email: Optional[str] = None,
 ) -> bool:
     try:
-        from sendgrid import SendGridAPIClient
-        from sendgrid.helpers.mail import Mail
-        message = Mail(
-            from_email=from_email or settings.DEFAULT_FROM_EMAIL,
-            to_emails=to_email,
-            subject=subject,
-            html_content=html_body,
+        import aiosmtplib
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+
+        message = MIMEMultipart("alternative")
+        message["From"] = from_email or settings.DEFAULT_FROM_EMAIL
+        message["To"] = to_email
+        message["Subject"] = subject
+        message.attach(MIMEText(html_body, "html"))
+
+        await aiosmtplib.send(
+            message,
+            hostname=settings.SMTP_HOST,
+            port=settings.SMTP_PORT,
+            username=settings.SMTP_USER,
+            password=settings.SMTP_PASSWORD,
+            start_tls=True,
         )
-        sg = SendGridAPIClient(settings.SENDGRID_API_KEY)
-        response = sg.send(message)
-        logger.info(f"Email sent to {to_email}: {response.status_code}")
-        return response.status_code in (200, 202)
+        logger.info(f"Email sent to {to_email}")
+        return True
     except Exception as e:
         logger.error(f"Email send failed to {to_email}: {e}")
         return False

@@ -25,8 +25,10 @@ export const usersApi = {
   list: (params?: Record<string, any>) => api.get<Paginated<User>>('/users', { params }),
   create: (data: any) => api.post<User>('/users', data),
   get: (id: number) => api.get<User>(`/users/${id}`),
+  reactivate: (id: number) => api.patch(`/users/${id}/reactivate`),
   update: (id: number, data: any) => api.patch<User>(`/users/${id}`, data),
   deactivate: (id: number) => api.delete(`/users/${id}`),
+  delete: (id: number) => api.delete(`/users/${id}/permanent`),
   resetPassword: (id: number) => api.post(`/users/${id}/reset-password`),
 }
 
@@ -215,6 +217,7 @@ export const inviteApi = {
   inviteUser: (data: {
     full_name: string
     email: string
+    password?: string 
     phone?: string
     role_name: string
     send_welcome_email?: boolean
@@ -255,3 +258,27 @@ export function getApiError(e: any): string {
   }
   return detail || 'Something went wrong'
 }
+
+
+export const ledgersApi = {
+  bankBook: (bankId: number, params?: { date_from?: string; date_to?: string }) =>
+    api.get(`/accounting/ledgers/bank-book/${bankId}`, { params }),
+
+  allBankBooks: (params?: { date_from?: string; date_to?: string }) =>
+    api.get('/accounting/ledgers/bank-book', { params }),
+
+  cashBook: (params?: { date_from?: string; date_to?: string; account_id?: number }) =>
+    api.get('/accounting/ledgers/cash-book', { params }),
+
+  generalLedger: (accountId: number, params?: { date_from?: string; date_to?: string }) =>
+    api.get(`/accounting/ledgers/general-ledger/${accountId}`, { params }),
+
+  journalRegister: (params?: {
+    date_from?: string
+    date_to?: string
+    journal_type?: string
+    include_unposted?: boolean
+  }) =>
+    api.get('/accounting/ledgers/journal-register', { params }),
+}
+ 

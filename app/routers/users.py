@@ -99,6 +99,26 @@ async def create_user(
     await db.commit()
     return _to_response(user)
 
+# ── Re activate user ──────────────────────────────────────────────────────────────────
+
+@router.patch("/{user_id}/reactivate", dependencies=[AdminRequired])
+async def reactivate_user(user_id: int, db: DB, current_user: CurrentUser):
+    user = await _get_or_404(user_id, db)
+    _assert_access(current_user, user)
+    user.status = UserStatus.ACTIVE
+    await db.commit()
+    return {"message": "User reactivated"}
+
+# ── Delete user ──────────────────────────────────────────────────────────────────
+
+@router.delete("/{user_id}/permanent", dependencies=[AdminRequired])
+async def delete_user(user_id: int, db: DB, current_user: CurrentUser):
+    user = await _get_or_404(user_id, db)
+    _assert_access(current_user, user)
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot delete yourself")
+    await db.delete(user)
+    await db.commit()
 
 # ── Get user ──────────────────────────────────────────────────────────────────
 @router.get("/{user_id}", response_model=UserResponse)

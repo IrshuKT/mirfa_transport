@@ -1,5 +1,5 @@
 // EmployeesPage.tsx
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { employeesApi } from '@/api/services'
 import {
@@ -9,69 +9,147 @@ import {
 import toast from 'react-hot-toast'
 
 const EMPTY_FORM = {
-  full_name: '', employee_no: '', designation: '',
-  department: '', visa_expiry: '', emirates_id_expiry: '', status: 'active',
+  full_name: '',
+  employee_no: '',
+  designation: '',
+  department: '',
+  email: '',
+  phone: '',
+  mobile: '',
+  nationality: '',
+  join_date: '',
+  end_date: '',
+  basic_salary: '',
+  currency: 'AED',
+  status: 'active',
+  // UAE Compliance
+  emirates_id: '',
+  emirates_id_expiry: '',
+  visa_no: '',
+  visa_expiry: '',
+  passport_no: '',
+  passport_expiry: '',
+  labour_card_no: '',
+  labour_card_expiry: '',
+  notes: '',
 }
 
 // ── Inline Add/Edit Form ───────────────────────────────────────────────────────
-function EmployeeForm({
-  employee, onCancel
-}: { employee?: any; onCancel: () => void }) {
+function EmployeeForm({ employee, onCancel }: { employee?: any; onCancel: () => void }) {
   const qc = useQueryClient()
   const isEdit = !!employee
-
   const [form, setForm] = useState(EMPTY_FORM)
 
   useEffect(() => {
     setForm(employee ? {
-      full_name: employee.full_name ?? '',
-      employee_no: employee.employee_no ?? '',
-      designation: employee.designation ?? '',
-      department: employee.department ?? '',
-      visa_expiry: employee.visa_expiry?.slice(0, 10) ?? '',
-      emirates_id_expiry: employee.emirates_id_expiry?.slice(0, 10) ?? '',
-      status: employee.status ?? 'active',
+      full_name:           employee.full_name ?? '',
+      employee_no:         employee.employee_no ?? '',
+      designation:         employee.designation ?? '',
+      department:          employee.department ?? '',
+      email:               employee.email ?? '',
+      phone:               employee.phone ?? '',
+      mobile:              employee.mobile ?? '',
+      nationality:         employee.nationality ?? '',
+      join_date:           employee.join_date?.slice(0, 10) ?? '',
+      end_date:            employee.end_date?.slice(0, 10) ?? '',
+      basic_salary:        employee.basic_salary ?? '',
+      currency:            employee.currency ?? 'AED',
+      status:              employee.status ?? 'active',
+      emirates_id:         employee.emirates_id ?? '',
+      emirates_id_expiry:  employee.emirates_id_expiry?.slice(0, 10) ?? '',
+      visa_no:             employee.visa_no ?? '',
+      visa_expiry:         employee.visa_expiry?.slice(0, 10) ?? '',
+      passport_no:         employee.passport_no ?? '',
+      passport_expiry:     employee.passport_expiry?.slice(0, 10) ?? '',
+      labour_card_no:      employee.labour_card_no ?? '',
+      labour_card_expiry:  employee.labour_card_expiry?.slice(0, 10) ?? '',
+      notes:               employee.notes ?? '',
     } : EMPTY_FORM)
   }, [employee])
 
   const mutation = useMutation({
-    mutationFn: (data: any) =>
-      isEdit ? employeesApi.update(employee.id, data) : employeesApi.create(data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['employees'] })
-      toast.success(isEdit ? 'Employee updated' : 'Employee added')
-      onCancel()
-    },
-    onError: () => toast.error('Something went wrong. Please try again.'),
-  })
+  mutationFn: (data: any) => {
+    // Convert empty strings to null for optional fields
+    const cleaned = Object.fromEntries(
+      Object.entries(data).map(([k, v]) => [k, v === '' ? null : v])
+    )
+    return isEdit ? employeesApi.update(employee.id, cleaned) : employeesApi.create(cleaned)
+  },
+  onSuccess: () => {
+    qc.invalidateQueries({ queryKey: ['employees'] })
+    toast.success(isEdit ? 'Employee updated' : 'Employee added')
+    onCancel()
+  },
+  onError: () => toast.error('Something went wrong.'),
+})
 
-  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
 
   return (
     <Card className="border-blue-200 bg-blue-50/40">
-      <div className="p-5">
-        <h2 className="text-sm font-semibold text-slate-700 mb-4">
+      <div className="p-5 space-y-6">
+        <h2 className="text-sm font-semibold text-slate-700">
           {isEdit ? `Editing: ${employee.full_name}` : 'New Employee'}
         </h2>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          <Input label="Full Name" value={form.full_name} onChange={set('full_name')} />
-          <Input label="Employee No." value={form.employee_no} onChange={set('employee_no')} />
-          <Input label="Designation" value={form.designation} onChange={set('designation')} />
-          <Input label="Department" value={form.department} onChange={set('department')} />
-          <Input label="Visa Expiry" type="date" value={form.visa_expiry} onChange={set('visa_expiry')} />
-          <Input label="EID Expiry" type="date" value={form.emirates_id_expiry} onChange={set('emirates_id_expiry')} />
-          <Select
-            label="Status"
-            value={form.status}
-            onChange={set('status')}
-            options={[
-              { label: 'Active', value: 'active' },
-              { label: 'Inactive', value: 'inactive' },
-            ]}
+
+        {/* Basic Info */}
+        <div>
+          <p className="text-xs font-semibold text-slate-500 uppercase mb-3">Basic Information</p>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            <Input label="Full Name *"     value={form.full_name}   onChange={set('full_name')} />
+            <Input label="Employee No. *"  value={form.employee_no} onChange={set('employee_no')} />
+            <Input label="Designation"     value={form.designation} onChange={set('designation')} />
+            <Input label="Department"      value={form.department}  onChange={set('department')} />
+            <Input label="Email"           type="email" value={form.email}  onChange={set('email')} />
+            <Input label="Phone"           value={form.phone}       onChange={set('phone')} />
+            <Input label="Mobile"          value={form.mobile}      onChange={set('mobile')} />
+            <Input label="Nationality"     value={form.nationality} onChange={set('nationality')} />
+            <Input label="Join Date"       type="date" value={form.join_date}  onChange={set('join_date')} />
+            <Input label="End Date"        type="date" value={form.end_date}   onChange={set('end_date')} />
+            <Input label="Basic Salary"    type="number" value={form.basic_salary} onChange={set('basic_salary')} />
+            <Select label="Currency" value={form.currency} onChange={set('currency')}
+              options={[
+                { label: 'AED', value: 'AED' },
+                { label: 'USD', value: 'USD' },
+              ]} />
+            <Select label="Status" value={form.status} onChange={set('status')}
+              options={[
+                { label: 'Active',      value: 'active' },
+                { label: 'On Leave',    value: 'on_leave' },
+                { label: 'Probation',   value: 'probation' },
+                { label: 'Terminated',  value: 'terminated' },
+              ]} />
+          </div>
+        </div>
+
+        {/* UAE Compliance */}
+        <div>
+          <p className="text-xs font-semibold text-slate-500 uppercase mb-3">UAE Compliance Documents</p>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            <Input label="Emirates ID"        value={form.emirates_id}        onChange={set('emirates_id')} />
+            <Input label="EID Expiry"         type="date" value={form.emirates_id_expiry} onChange={set('emirates_id_expiry')} />
+            <Input label="Visa No."           value={form.visa_no}            onChange={set('visa_no')} />
+            <Input label="Visa Expiry"        type="date" value={form.visa_expiry}        onChange={set('visa_expiry')} />
+            <Input label="Passport No."       value={form.passport_no}        onChange={set('passport_no')} />
+            <Input label="Passport Expiry"    type="date" value={form.passport_expiry}    onChange={set('passport_expiry')} />
+            <Input label="Labour Card No."    value={form.labour_card_no}     onChange={set('labour_card_no')} />
+            <Input label="Labour Card Expiry" type="date" value={form.labour_card_expiry} onChange={set('labour_card_expiry')} />
+          </div>
+        </div>
+
+        {/* Notes */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
+          <textarea
+            value={form.notes}
+            onChange={set('notes')}
+            rows={2}
+            className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
           />
         </div>
-        <div className="flex justify-end gap-2 mt-4">
+
+        <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
           <Button variant="ghost" onClick={onCancel}>Cancel</Button>
           <Button onClick={() => mutation.mutate(form)} loading={mutation.isPending}>
             {isEdit ? 'Save Changes' : 'Add Employee'}
@@ -183,8 +261,8 @@ export function EmployeesPage() {
               {employees?.results?.length === 0 ? (
                 <tr><td colSpan={8}><EmptyState title="No employees found" /></td></tr>
               ) : employees?.results?.map((e: any) => (
-                <>
-                  <tr key={e.id} className={`hover:bg-slate-50 ${inactivateId === e.id ? 'bg-red-50' : ''}`}>
+                <React.Fragment key={e.id}>
+                  <tr className={`hover:bg-slate-50 ${inactivateId === e.id ? 'bg-red-50' : ''}`}>
                     <Td className="text-xs text-slate-500">{e.employee_no}</Td>
                     <Td className="font-medium text-slate-900">{e.full_name}</Td>
                     <Td>{e.designation || '—'}</Td>
@@ -224,7 +302,7 @@ export function EmployeesPage() {
                       onCancel={() => setInactivateId(null)}
                     />
                   )}
-                </>
+                </React.Fragment>
               ))}
             </tbody>
           </Table>

@@ -99,7 +99,7 @@ export default function DocumentsPage() {
                       {doc.doc_no && <span className="text-slate-400 ml-1">#{doc.doc_no}</span>}
                     </p>
                     <p className="text-xs text-slate-500">
-                      Entity #{doc.entity_id} · Expires {formatDate(doc.expiry_date)}
+                        {doc.entity_name ?? `Entity #${doc.entity_id}`} · Expires {formatDate(doc.expiry_date)}
                     </p>
                   </div>
                 </div>
@@ -110,14 +110,12 @@ export default function DocumentsPage() {
                       : `${doc.days_remaining} days left`
                     }
                   </span>
-                  <a
-                    href={doc.file_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs text-sky-600 hover:underline"
-                  >
-                    View
-                  </a>
+                  {doc.file_url && (
+  <a href={doc.file_url} target="_blank" rel="noreferrer"
+    className="text-xs text-sky-600 hover:underline">
+    View
+  </a>
+)}
                 </div>
               </div>
             ))}

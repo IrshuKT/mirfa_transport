@@ -1,7 +1,8 @@
 from typing import Annotated, Optional
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel 
+from pydantic import BaseModel as _BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -161,3 +162,19 @@ def _fmt(d: Driver) -> dict:
         "current_lng": float(d.current_lng) if d.current_lng else None,
         "last_ping_at": d.last_ping_at, "notes": d.notes, "created_at": d.created_at,
     }
+
+@router.post("/me/fcm-token")
+async def update_fcm_token(
+    payload: FCMTokenUpdate,
+    db: DB,
+    current_user: CurrentUser,
+):
+    result = await db.execute(
+        select(Driver).where(Driver.user_id == current_user.id)
+    )
+    driver = result.scalar_one_or_none()
+    if not driver:
+        raise HTTPException(404, "Driver profile not found")
+    driver.fcm_token = payload.fcm_token
+    await db.commit()
+    return {"message": "FCM token updated"}

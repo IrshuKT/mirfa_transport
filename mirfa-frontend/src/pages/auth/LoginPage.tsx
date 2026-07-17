@@ -8,6 +8,7 @@ import { authApi } from '@/api/services'
 import { useAuthStore } from '@/stores/authStore'
 import { Button, Input } from '@/components/ui'
 import toast from 'react-hot-toast'
+import { registerFCMToken, listenForPushNotifications } from '@/lib/firebase'
 
 const loginSchema = z.object({
   email: z.string().min(1, 'Enter a valid email or mobile number'),
@@ -57,11 +58,19 @@ export default function LoginPage() {
       toast.success(`Welcome back, ${user.full_name}!`)
 
       // Role-based redirect
+      if (user.role === 'driver') {
+      await registerFCMToken()
+      await listenForPushNotifications()
+      navigate('/my-jobs')
+      } else {
+      navigate('/dashboard')
+    }
       
       if (user.role === 'driver') navigate('/driver')
       else navigate('/dashboard')
     } catch (err: any) {
-  alert('Fetch test failed: ' + err.message)
+    alert('Fetch test failed: ' + err.message)
+
   const msg = err.response?.data?.detail || 'Login failed. Check your credentials.'
   toast.error(msg)
 } finally {

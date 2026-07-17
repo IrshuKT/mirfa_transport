@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "318812339059",
+    "project_id": "test-9636107a",
+    "storage_bucket": "test-9636107a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:318812339059:android:a156520e6bbec2cb0ba306",
+        "android_client_info": {
+          "package_name": "com.mirfatransport.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDcIs8d7K4tO7zyHGfNGqU2X4i6du-L_F4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

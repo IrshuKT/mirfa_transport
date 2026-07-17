@@ -98,44 +98,143 @@ async def expiry_dashboard(
     db: DB, current_user: CurrentUser,
     days_ahead: int = Query(60, ge=1, le=365),
 ):
-    """
-    Central expiry dashboard — returns all documents expiring within N days,
-    grouped by entity type, sorted by urgency.
-    """
-    cutoff = date.today() + timedelta(days=days_ahead)
-    today = date.today()
+    from app.models.entities import Employee, Driver, Vehicle
+    from sqlalchemy import literal
 
+    cutoff = date.today() + timedelta(days=days_ahead)
+    today  = date.today()
+
+    docs = []
+
+    # ── 1. EntityDocument table (uploaded files) ──────────────────────────
     q = select(EntityDocument).where(
         EntityDocument.company_id == current_user.company_id,
-        EntityDocument.is_active == True,
+        EntityDocument.is_active  == True,
         EntityDocument.expiry_date != None,
         EntityDocument.expiry_date <= cutoff,
-    ).order_by(EntityDocument.expiry_date.asc())
-
+    )
     result = await db.execute(q)
-    docs = result.scalars().all()
-
-    # Group by entity_type
-    grouped: dict = {}
-    for doc in docs:
+    for doc in result.scalars().all():
         days_left = (doc.expiry_date - today).days
-        entry = {
+        docs.append({
             **_fmt(doc),
             "days_remaining": days_left,
-            "urgency": "expired" if days_left < 0 else "critical" if days_left <= 7 else "warning" if days_left <= 30 else "notice",
-        }
-        grouped.setdefault(doc.entity_type, []).append(entry)
+            "urgency": _urgency(days_left),
+        })
+
+    # ── 2. Employee compliance fields ─────────────────────────────────────
+    emp_result = await db.execute(
+        select(Employee).where(Employee.company_id == current_user.company_id)
+    )
+    for emp in emp_result.scalars().all():
+        for field, label in [
+            ("visa_expiry",          "visa"),
+            ("emirates_id_expiry",   "emirates_id"),
+            ("passport_expiry",      "passport"),
+            ("labour_card_expiry",   "labour_card"),
+        ]:
+            expiry = getattr(emp, field)
+            if expiry and expiry <= cutoff:
+                days_left = (expiry - today).days
+                docs.append({
+                    "id":            f"emp_{emp.id}_{field}",
+                    "entity_type":   "employee",
+                    "entity_id":     emp.id,
+                    "entity_name":   emp.full_name,
+                    "doc_type":      label,
+                    "doc_no":        None,
+                    "file_name":     None,
+                    "file_url":      None,
+                    "issued_date":   None,
+                    "expiry_date":   expiry,
+                    "alert_days_before": 30,
+                    "notes":         None,
+                    "created_at":    None,
+                    "days_remaining": days_left,
+                    "urgency":       _urgency(days_left),
+                })
+
+    # ── 3. Driver license ─────────────────────────────────────────────────
+    drv_result = await db.execute(
+        select(Driver).where(Driver.company_id == current_user.company_id)
+    )
+    for drv in drv_result.scalars().all():
+        if drv.license_expiry and drv.license_expiry <= cutoff:
+            days_left = (drv.license_expiry - today).days
+            docs.append({
+                "id":            f"drv_{drv.id}_license",
+                "entity_type":   "driver",
+                "entity_id":     drv.id,
+                "entity_name":   drv.full_name,
+                "doc_type":      "driving_license",
+                "doc_no":        drv.license_no,
+                "file_name":     None,
+                "file_url":      None,
+                "issued_date":   None,
+                "expiry_date":   drv.license_expiry,
+                "alert_days_before": 30,
+                "notes":         None,
+                "created_at":    None,
+                "days_remaining": days_left,
+                "urgency":       _urgency(days_left),
+            })
+
+    # ── 4. Vehicle compliance ─────────────────────────────────────────────
+    veh_result = await db.execute(
+        select(Vehicle).where(Vehicle.company_id == current_user.company_id)
+    )
+    for veh in veh_result.scalars().all():
+        for field, label in [
+            ("mulkiya_expiry",    "mulkiya"),
+            ("insurance_expiry",  "insurance"),
+            ("rta_permit_expiry", "rta_permit"),
+        ]:
+            expiry = getattr(veh, field)
+            if expiry and expiry <= cutoff:
+                days_left = (expiry - today).days
+                docs.append({
+                    "id":            f"veh_{veh.id}_{field}",
+                    "entity_type":   "vehicle",
+                    "entity_id":     veh.id,
+                    "entity_name":   veh.plate_no,
+                    "doc_type":      label,
+                    "doc_no":        None,
+                    "file_name":     None,
+                    "file_url":      None,
+                    "issued_date":   None,
+                    "expiry_date":   expiry,
+                    "alert_days_before": 30,
+                    "notes":         None,
+                    "created_at":    None,
+                    "days_remaining": days_left,
+                    "urgency":       _urgency(days_left),
+                })
+
+    # ── Sort all by expiry date ───────────────────────────────────────────
+    docs.sort(key=lambda d: d["expiry_date"])
+
+    # ── Group by entity_type ──────────────────────────────────────────────
+    grouped: dict = {}
+    for doc in docs:
+        grouped.setdefault(doc["entity_type"], []).append(doc)
 
     summary = {
         "total_expiring": len(docs),
-        "expired": sum(1 for d in docs if (d.expiry_date - today).days < 0),
-        "critical": sum(1 for d in docs if 0 <= (d.expiry_date - today).days <= 7),
-        "warning": sum(1 for d in docs if 7 < (d.expiry_date - today).days <= 30),
-        "notice": sum(1 for d in docs if 30 < (d.expiry_date - today).days <= days_ahead),
+        "expired":  sum(1 for d in docs if d["days_remaining"] < 0),
+        "critical": sum(1 for d in docs if 0 <= d["days_remaining"] <= 7),
+        "warning":  sum(1 for d in docs if 7 < d["days_remaining"] <= 30),
+        "notice":   sum(1 for d in docs if 30 < d["days_remaining"]),
     }
 
     return {"summary": summary, "by_entity_type": grouped}
 
+
+# ── Helper ────────────────────────────────────────────────────────────────────
+def _urgency(days_left: int) -> str:
+    if days_left < 0:   return "expired"
+    if days_left <= 7:  return "critical"
+    if days_left <= 30: return "warning"
+    return "notice"
 
 @router.delete("/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_document(doc_id: int, db: DB, current_user: CurrentUser):
